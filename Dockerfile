@@ -21,4 +21,4 @@ ENV PORT 8080
 
 Run the application using gunicorn, a production-ready web server.
 Gunicorn is configured to listen on the port specified by the PORT env var.
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "main:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:$PORT", "main:app"]

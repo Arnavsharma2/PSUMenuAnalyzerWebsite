@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Penn State Altoona - Dining Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8;
+        }
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 28px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 28px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #3b82f6; /* blue-500 */
+        }
+        input:checked + .slider:before {
+            transform: translateX(22px);
+        }
+        /* Custom styles for loader and results */
+        #loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .preference-item.disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="antialiased text-gray-800 p-4 sm:p-6 md:p-8">
+    <div class="max-w-4xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl sm:text-4xl font-bold text-gray-900">Penn State Altoona Dining Analyzer</h1>
+            <p class="mt-2 text-lg text-gray-600">Get personalized meal recommendations for Port Sky Cafe.</p>
+        </header>
+
+        <main>
+            <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+                <h2 class="text-2xl font-semibold mb-4 text-gray-800">Your Dietary Preferences</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Vegetarian Toggle -->
+                    <div id="vegetarian-pref" class="preference-item flex items-center justify-between bg-gray-50 p-4 rounded-lg">
+                        <span class="font-medium text-gray-700">Vegetarian</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="vegetarian">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <!-- Protein Priority Toggle -->
+                    <div class="flex items-center justify-between bg-gray-50 p-4 rounded-lg">
+                        <span class="font-medium text-gray-700">Prioritize High Protein</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="prioritize-protein">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <!-- Exclude Beef Toggle -->
+                    <div id="beef-pref" class="preference-item flex items-center justify-between bg-gray-50 p-4 rounded-lg">
+                        <span class="font-medium text-gray-700">Exclude Beef</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="exclude-beef">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <!-- Exclude Pork Toggle -->
+                    <div id="pork-pref" class="preference-item flex items-center justify-between bg-gray-50 p-4 rounded-lg">
+                        <span class="font-medium text-gray-700">Exclude Pork</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="exclude-pork">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+                <div class="mt-6 text-center">
+                    <button id="analyze-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg shadow-md transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-300">
+                        Analyze Today's Menu
+                    </button>
+                </div>
+            </div>
+
+            <!-- Results Section -->
+            <div id="results-container" class="space-y-8">
+                <!-- Loader and Error Messages will appear here -->
+            </div>
+        </main>
+        
+        <footer class="text-center mt-12 text-sm text-gray-500">
+            <p>Powered by Gemini. This is an independent project and not affiliated with Penn State.</p>
+        </footer>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const analyzeBtn = document.getElementById('analyze-btn');
+            const resultsContainer = document.getElementById('results-container');
+            const vegetarianToggle = document.getElementById('vegetarian');
+            const beefPref = document.getElementById('beef-pref');
+            const porkPref = document.getElementById('pork-pref');
+
+            // Logic to disable beef/pork toggles if vegetarian is selected
+            vegetarianToggle.addEventListener('change', () => {
+                const isVegetarian = vegetarianToggle.checked;
+                beefPref.classList.toggle('disabled', isVegetarian);
+                porkPref.classList.toggle('disabled', isVegetarian);
+                if (isVegetarian) {
+                    document.getElementById('exclude-beef').checked = false;
+                    document.getElementById('exclude-pork').checked = false;
+                }
+            });
+            
+            analyzeBtn.addEventListener('click', async () => {
+                resultsContainer.innerHTML = `
+                    <div class="flex flex-col items-center justify-center p-6 bg-white rounded-lg shadow-md">
+                        <div id="loader"></div>
+                        <p class="mt-4 text-gray-600 font-medium">Analyzing the menu, please wait...</p>
+                    </div>`;
+
+                const preferences = {
+                    vegetarian: document.getElementById('vegetarian').checked,
+                    exclude_beef: document.getElementById('exclude-beef').checked,
+                    exclude_pork: document.getElementById('exclude-pork').checked,
+                    prioritize_protein: document.getElementById('prioritize-protein').checked
+                };
+
+                try {
+                    // Important: When deployed, this URL should be updated to your public server URL.
+                    // For local testing, it points to your local Flask server.
+                    const response = await fetch('http://127.0.0.1:5001/api/analyze', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(preferences)
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response from server.' }));
+                        throw new Error(errorData.error || `Server responded with status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    displayResults(data);
+
+                } catch (error) {
+                    console.error('Error fetching recommendations:', error);
+                    resultsContainer.innerHTML = `
+                        <div class="bg-red-100 border-l-4 border-red-500 text-red-800 p-4 rounded-lg shadow-sm" role="alert">
+                            <p class="font-bold">Connection Error</p>
+                            <p>Could not connect to the backend server. Please ensure the local Python server is running.</p>
+                            <p class="mt-2 text-sm">In your terminal, run: <code>flask --app main run --port 5001</code></p>
+                        </div>`;
+                }
+            });
+
+            function displayResults(data) {
+                resultsContainer.innerHTML = ''; // Clear previous results or loader
+                const meals = ['Breakfast', 'Lunch', 'Dinner'];
+
+                if (Object.values(data).every(meal => !meal || meal.length === 0)) {
+                    resultsContainer.innerHTML = `
+                        <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-4 rounded-lg shadow-sm" role="alert">
+                            <p class="font-bold">No Recommendations Found</p>
+                            <p>No menu items matching your preferences could be found for today. Please try again later or adjust your filters.</p>
+                        </div>`;
+                    return;
+                }
+
+                meals.forEach(mealName => {
+                    const items = data[mealName];
+                    const mealEl = document.createElement('div');
+                    mealEl.className = 'bg-white rounded-lg shadow-md p-6';
+                    
+                    let itemsHtml = '<p class="text-gray-500">No items found for this meal.</p>';
+                    if (items && items.length > 0) {
+                        itemsHtml = items.map((item, index) => {
+                            const [food, score, reason, url] = item;
+                            const scoreColor = score >= 80 ? 'bg-green-100 text-green-800' : score >= 60 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+                            return `
+                                <div class="py-4 ${index < items.length - 1 ? 'border-b border-gray-200' : ''}">
+                                    <div class="flex items-start justify-between">
+                                        <div class="flex-1">
+                                            <h4 class="text-lg font-semibold text-gray-800">${food}</h4>
+                                            <p class="text-sm text-gray-500 mt-1">
+                                                <strong class="font-medium">Analysis:</strong> ${reason || 'A standard, balanced option.'}
+                                            </p>
+                                        </div>
+                                        <div class="ml-4 text-center">
+                                            <span class="text-xs font-semibold uppercase text-gray-500">Score</span>
+                                            <div class="text-xl font-bold ${scoreColor} rounded-full w-12 h-12 flex items-center justify-center mt-1">${score}</div>
+                                        </div>
+                                    </div>
+                                    <div class="mt-2">
+                                        <a href="${url}" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-600 hover:text-blue-800 hover:underline">
+                                            View Nutrition Info &rarr;
+                                        </a>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('');
+                    }
+
+                    mealEl.innerHTML = `
+                        <h3 class="text-2xl font-bold text-blue-700 mb-4 pb-2 border-b-2 border-blue-200">${mealName}</h3>
+                        <div class="space-y-2">${itemsHtml}</div>
+                    `;
+                    resultsContainer.appendChild(mealEl);
+                });
+            }
+        });
+    </script>
+</body>
+</html>
+

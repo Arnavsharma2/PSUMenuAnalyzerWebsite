@@ -1,5 +1,5 @@
 Use an official Python runtime as a parent image
-FROM python:3.9-slim
+FROM python:3.11-slim
 
 Set the working directory in the container
 WORKDIR /app
@@ -13,15 +13,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 Copy the rest of the application's code into the container at /app
 COPY . .
 
-Make port 8080 available to the world outside this container
+Expose the port the app runs on
 EXPOSE 8080
 
 Define environment variable for the port
 ENV PORT 8080
 
-Define environment variable for the API key (this will be set on the server)
-ENV GEMINI_API_KEY "AIzaSyC3k6AqP0dgg_LvOdKsNAorKWe9Xqf_bl0"
-
-Run main.py when the container launches using Gunicorn
-Gunicorn is a production-ready web server for Python.
+Run the application using gunicorn, a production-ready web server.
+Gunicorn is configured to listen on the port specified by the PORT env var.
 CMD ["gunicorn", "--bind", "0.0.0.0:8080", "main:app"]

@@ -31,7 +31,6 @@ class MenuAnalyzer:
         self.vegetarian = vegetarian
         self.prioritize_protein = prioritize_protein
         
-        gemini_api_key = 'AIzaSyC3k6AqP0dgg_LvOdKsNAorKWe9Xqf_bl0'
         self.gemini_api_key = gemini_api_key
         if self.gemini_api_key:
             self.gemini_url = (

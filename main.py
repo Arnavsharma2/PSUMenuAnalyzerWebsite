@@ -158,7 +158,7 @@ class MenuAnalyzer:
             'select', 'menu', 'date', 'campus', 'print', 'view', 'nutrition', 'allergen',
             'feedback', 'contact', 'hours', 'location', 'penn state', 'altoona', 
             'port sky', 'cafe', 'kitchen', 'station', 'grill', 'deli', 'market',
-            'made to order', 'action'
+            'made to order', 'action', 'no items', 'not available', 'closed'
         ]
         if any(keyword in text_lower for keyword in non_food_keywords): return False
         if not any(c.isalpha() for c in text): return False
@@ -184,16 +184,31 @@ class MenuAnalyzer:
             return self.get_fallback_data()
 
         campus_options = form_options.get('campus', {})
-        # Look for the specific campus value
+        # Look for the specific campus value with better matching
         campus_value = None
+        campus_name_found = None
+        
+        # Try exact match first
         for name, val in campus_options.items():
-            if self.campus_value in name.lower():
+            if self.campus_value.lower() in name.lower():
                 campus_value = val
+                campus_name_found = name
                 break
         
+        # If no exact match, try partial matching
         if not campus_value:
-            print(f"Could not find {self.campus_name} campus value. Using fallback.")
+            for name, val in campus_options.items():
+                if any(word in name.lower() for word in self.campus_value.lower().split('-')):
+                    campus_value = val
+                    campus_name_found = name
+                    break
+        
+        if not campus_value:
+            print(f"Could not find {self.campus_name} campus value. Available options: {list(campus_options.keys())}")
             return self.get_fallback_data()
+        
+        if self.debug:
+            print(f"Found campus: {campus_name_found} with value: {campus_value}")
 
         date_options = form_options.get('date', {})
         today_str_key = datetime.now().strftime('%A, %B %d').lower()
@@ -228,9 +243,15 @@ class MenuAnalyzer:
                 if items:
                     daily_menu[meal_name] = items
                     if self.debug: print(f"Found {len(items)} items for {meal_name}.")
+                else:
+                    # Explicitly mark meals with no items
+                    daily_menu[meal_name] = {}
+                    if self.debug: print(f"No items found for {meal_name}.")
                 time.sleep(0.5)
             except requests.RequestException as e:
                 if self.debug: print(f"Error fetching {meal_name} menu: {e}")
+                # Mark as no items if there's an error
+                daily_menu[meal_name] = {}
 
         if not daily_menu:
             print("Failed to scrape any menu items from the website. Using fallback.")
@@ -319,9 +340,12 @@ class MenuAnalyzer:
     def analyze_menu_local(self, daily_menu: Dict[str, Dict[str, str]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
         results = {}
         for meal, items in daily_menu.items():
-            analyzed_items = self.analyze_food_health_local_list(items)
-            analyzed_items.sort(key=lambda x: x[1], reverse=True)
-            results[meal] = analyzed_items
+            if not items:  # Handle empty meals
+                results[meal] = []
+            else:
+                analyzed_items = self.analyze_food_health_local_list(items)
+                analyzed_items.sort(key=lambda x: x[1], reverse=True)
+                results[meal] = analyzed_items
         return results
 
     def analyze_food_health_local_list(self, food_items: Dict[str, str]) -> List[Tuple[str, int, str, str]]:
@@ -369,6 +393,7 @@ def analyze():
         print(f"Received request with data: {data}")
         
         # Simple validation
+        campus = data.get('campus', 'altoona-port-sky')
         vegetarian = data.get('vegetarian', False)
         vegan = data.get('vegan', False)
         exclude_beef = data.get('exclude_beef', False)
@@ -382,13 +407,8 @@ def analyze():
         # Get API key from environment
         api_key = os.getenv('GEMINI_API_KEY')
 
-        # Determine campus based on the selected option
-        campus_key = data.get('campus')
-        if not campus_key:
-            return jsonify({"error": "Campus not selected."}), 400
-
         analyzer = MenuAnalyzer(
-            campus_key=campus_key,
+            campus_key=campus,
             gemini_api_key=api_key,
             exclude_beef=exclude_beef,
             exclude_pork=exclude_pork,

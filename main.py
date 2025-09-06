@@ -14,99 +14,12 @@ from urllib.parse import urljoin
 app = Flask(__name__)
 CORS(app)
 
-# Campus configuration mapping
-CAMPUS_CONFIG = {
-    'altoona-port-sky': {
-        'name': 'Altoona - Port Sky Cafe',
-        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
-        'campus_value': 'altoona'
-    },
-    'beaver-brodhead': {
-        'name': 'Beaver - Brodhead Bistro',
-        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
-        'campus_value': 'beaver'
-    },
-    'behrend-brunos': {
-        'name': 'Behrend - Bruno\'s',
-        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
-        'campus_value': 'behrend'
-    },
-    'behrend-dobbins': {
-        'name': 'Behrend - Dobbins',
-        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
-        'campus_value': 'behrend'
-    },
-    'berks-tullys': {
-        'name': 'Berks - Tully\'s',
-        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
-        'campus_value': 'berks'
-    },
-    'brandywine-blue-apple': {
-        'name': 'Brandywine - Blue Apple Cafe',
-        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
-        'campus_value': 'brandywine'
-    },
-    'greater-allegheny-cafe-metro': {
-        'name': 'Greater Allegheny - Cafe Metro',
-        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
-        'campus_value': 'greater-allegheny'
-    },
-    'harrisburg-stacks': {
-        'name': 'Harrisburg - Stacks',
-        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
-        'campus_value': 'harrisburg'
-    },
-    'harrisburg-outpost': {
-        'name': 'Harrisburg - The Outpost',
-        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
-        'campus_value': 'harrisburg'
-    },
-    'hazleton-highacres': {
-        'name': 'Hazleton - HighAcres Cafe',
-        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
-        'campus_value': 'hazleton'
-    },
-    'mont-alto-mill': {
-        'name': 'Mont Alto - The Mill Cafe',
-        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
-        'campus_value': 'mont-alto'
-    },
-    'up-east-findlay': {
-        'name': 'UP: East Food District @ Findlay',
-        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
-        'campus_value': 'up-east'
-    },
-    'up-north-warnock': {
-        'name': 'UP: North Food District @ Warnock',
-        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
-        'campus_value': 'up-north'
-    },
-    'up-pollock': {
-        'name': 'UP: Pollock Dining Commons',
-        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
-        'campus_value': 'up-pollock'
-    },
-    'up-south-redifer': {
-        'name': 'UP: South Food District @ Redifer',
-        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
-        'campus_value': 'up-south'
-    },
-    'up-west-waring': {
-        'name': 'UP: West Food District @ Waring',
-        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
-        'campus_value': 'up-west'
-    }
-}
-
 # --- Menu Analyzer Class ---
 class MenuAnalyzer:
     def __init__(self, campus_key: str, gemini_api_key: str = None, exclude_beef=False, exclude_pork=False,
                  vegetarian=False, vegan=False, prioritize_protein=False, debug=False):
-        self.campus_config = CAMPUS_CONFIG.get(campus_key, CAMPUS_CONFIG['altoona-port-sky'])
-        self.base_url = self.campus_config['base_url']
-        self.campus_value = self.campus_config['campus_value']
-        self.campus_name = self.campus_config['name']
-        
+        self.base_url = "https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm"
+        self.campus_key = campus_key
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -146,6 +59,12 @@ class MenuAnalyzer:
                         text = option.get_text(strip=True)
                         if value and text:
                             options[name][text.lower()] = value
+            
+            if self.debug:
+                print("Available campus options:")
+                for name, val in options['campus'].items():
+                    print(f"  {name}: {val}")
+            
             return options
         except requests.RequestException as e:
             if self.debug: print(f"Error fetching initial page: {e}")
@@ -174,9 +93,47 @@ class MenuAnalyzer:
                 items[text] = full_url
         return items
 
+    def find_campus_value(self, campus_options: Dict[str, str]) -> Tuple[Optional[str], str]:
+        """Find the correct campus value based on the campus key"""
+        campus_key_lower = self.campus_key.lower()
+        
+        # Mapping of our campus keys to search terms
+        search_terms = {
+            'altoona-port-sky': ['altoona', 'port sky'],
+            'beaver-brodhead': ['beaver', 'brodhead'],
+            'behrend-brunos': ['behrend', 'bruno'],
+            'behrend-dobbins': ['behrend', 'dobbins'],
+            'berks-tullys': ['berks', 'tully'],
+            'brandywine-blue-apple': ['brandywine', 'blue apple'],
+            'greater-allegheny-cafe-metro': ['greater allegheny', 'cafe metro'],
+            'harrisburg-stacks': ['harrisburg', 'stacks'],
+            'harrisburg-outpost': ['harrisburg', 'outpost'],
+            'hazleton-highacres': ['hazleton', 'highacres'],
+            'mont-alto-mill': ['mont alto', 'mill'],
+            'up-east-findlay': ['east', 'findlay'],
+            'up-north-warnock': ['north', 'warnock'],
+            'up-pollock': ['pollock'],
+            'up-south-redifer': ['south', 'redifer'],
+            'up-west-waring': ['west', 'waring']
+        }
+        
+        terms = search_terms.get(campus_key_lower, [campus_key_lower])
+        
+        # Try to find exact matches first
+        for name, value in campus_options.items():
+            if all(term in name for term in terms):
+                return value, name
+        
+        # Try partial matches
+        for name, value in campus_options.items():
+            if any(term in name for term in terms):
+                return value, name
+        
+        return None, ""
+
     def run_analysis(self) -> Dict[str, List[Tuple[str, int, str, str]]]:
         if self.debug: 
-            print(f"Fetching initial form options for {self.campus_name}...")
+            print(f"Fetching initial form options for campus: {self.campus_key}")
         
         form_options = self.get_initial_form_data()
         if not form_options:
@@ -184,27 +141,10 @@ class MenuAnalyzer:
             return self.get_fallback_data()
 
         campus_options = form_options.get('campus', {})
-        # Look for the specific campus value with better matching
-        campus_value = None
-        campus_name_found = None
-        
-        # Try exact match first
-        for name, val in campus_options.items():
-            if self.campus_value.lower() in name.lower():
-                campus_value = val
-                campus_name_found = name
-                break
-        
-        # If no exact match, try partial matching
-        if not campus_value:
-            for name, val in campus_options.items():
-                if any(word in name.lower() for word in self.campus_value.lower().split('-')):
-                    campus_value = val
-                    campus_name_found = name
-                    break
+        campus_value, campus_name_found = self.find_campus_value(campus_options)
         
         if not campus_value:
-            print(f"Could not find {self.campus_name} campus value. Available options: {list(campus_options.keys())}")
+            print(f"Could not find campus value for {self.campus_key}. Available options: {list(campus_options.keys())}")
             return self.get_fallback_data()
         
         if self.debug:

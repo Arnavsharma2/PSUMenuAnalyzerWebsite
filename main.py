@@ -16,267 +16,10 @@ import pandas as pd
 app = Flask(__name__)
 CORS(app)
 
-# --- Nutritional Data Extractor Class ---
-class NutritionalDataExtractor:
-    def __init__(self, debug=False):
-        self.debug = debug
-        self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        })
-    
-    def extract_nutritional_data(self, url: str) -> Dict[str, float]:
-        """Extract nutritional data from a PSU nutrition page"""
-        try:
-            response = self.session.get(url, timeout=10)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            nutrition_data = {}
-            
-            # Look for nutrition facts table or similar structure
-            nutrition_tables = soup.find_all('table', class_=re.compile(r'nutrition|facts', re.I))
-            
-            for table in nutrition_tables:
-                rows = table.find_all('tr')
-                for row in rows:
-                    cells = row.find_all(['td', 'th'])
-                    if len(cells) >= 2:
-                        label = cells[0].get_text(strip=True).lower()
-                        value_text = cells[1].get_text(strip=True)
-                        
-                        # Extract numeric values
-                        value_match = re.search(r'(\d+\.?\d*)', value_text)
-                        if value_match:
-                            value = float(value_match.group(1))
-                            
-                            # Map common nutrition labels
-                            if 'calories' in label:
-                                nutrition_data['calories'] = value
-                            elif 'protein' in label:
-                                nutrition_data['protein'] = value
-                            elif 'fat' in label and 'total' in label:
-                                nutrition_data['fat'] = value
-                            elif 'saturated' in label and 'fat' in label:
-                                nutrition_data['saturated_fat'] = value
-                            elif 'carbohydrate' in label or 'carbs' in label:
-                                nutrition_data['carbs'] = value
-                            elif 'fiber' in label:
-                                nutrition_data['fiber'] = value
-                            elif 'sugar' in label:
-                                nutrition_data['sugar'] = value
-                            elif 'sodium' in label:
-                                nutrition_data['sodium'] = value
-                            elif 'cholesterol' in label:
-                                nutrition_data['cholesterol'] = value
-            
-            # If no structured data found, try to extract from text
-            if not nutrition_data:
-                page_text = soup.get_text().lower()
-                
-                # Look for common nutrition patterns in text
-                patterns = {
-                    'calories': r'(\d+)\s*calories?',
-                    'protein': r'(\d+\.?\d*)\s*g\s*protein',
-                    'fat': r'(\d+\.?\d*)\s*g\s*fat',
-                    'carbs': r'(\d+\.?\d*)\s*g\s*(?:carbs|carbohydrates?)',
-                    'fiber': r'(\d+\.?\d*)\s*g\s*fiber',
-                    'sodium': r'(\d+\.?\d*)\s*mg\s*sodium'
-                }
-                
-                for key, pattern in patterns.items():
-                    match = re.search(pattern, page_text)
-                    if match:
-                        nutrition_data[key] = float(match.group(1))
-            
-            if self.debug and nutrition_data:
-                print(f"Extracted nutrition data: {nutrition_data}")
-            
-            return nutrition_data
-            
-        except Exception as e:
-            if self.debug:
-                print(f"Error extracting nutrition data from {url}: {e}")
-            return {}
-    
-    def calculate_nutrition_score(self, nutrition_data: Dict[str, float]) -> Tuple[int, str]:
-        """Calculate a health score based on nutritional data"""
-        if not nutrition_data:
-            return 50, "No nutritional data available"
-        
-        score = 50  # Base score
-        reasons = []
-        
-        # Protein scoring (higher is better)
-        protein = nutrition_data.get('protein', 0)
-        if protein >= 25:
-            score += 20
-            reasons.append("High protein")
-        elif protein >= 15:
-            score += 10
-            reasons.append("Moderate protein")
-        elif protein < 5:
-            score -= 10
-            reasons.append("Low protein")
-        
-        # Calorie density scoring
-        calories = nutrition_data.get('calories', 0)
-        if calories > 0:
-            protein_per_calorie = protein / calories if calories > 0 else 0
-            if protein_per_calorie >= 0.1:  # 10g protein per 100 calories
-                score += 15
-                reasons.append("Good protein density")
-            elif protein_per_calorie < 0.05:  # Less than 5g protein per 100 calories
-                score -= 10
-                reasons.append("Low protein density")
-        
-        # Fat scoring (moderate is better)
-        fat = nutrition_data.get('fat', 0)
-        if 10 <= fat <= 25:
-            score += 5
-            reasons.append("Moderate fat content")
-        elif fat > 40:
-            score -= 15
-            reasons.append("High fat content")
-        
-        # Saturated fat penalty
-        saturated_fat = nutrition_data.get('saturated_fat', 0)
-        if saturated_fat > 10:
-            score -= 15
-            reasons.append("High saturated fat")
-        elif saturated_fat > 5:
-            score -= 5
-            reasons.append("Moderate saturated fat")
-        
-        # Fiber bonus
-        fiber = nutrition_data.get('fiber', 0)
-        if fiber >= 5:
-            score += 10
-            reasons.append("High fiber")
-        elif fiber >= 3:
-            score += 5
-            reasons.append("Moderate fiber")
-        
-        # Sugar penalty
-        sugar = nutrition_data.get('sugar', 0)
-        if sugar > 20:
-            score -= 15
-            reasons.append("High sugar")
-        elif sugar > 10:
-            score -= 5
-            reasons.append("Moderate sugar")
-        
-        # Sodium penalty
-        sodium = nutrition_data.get('sodium', 0)
-        if sodium > 1000:
-            score -= 15
-            reasons.append("High sodium")
-        elif sodium > 600:
-            score -= 5
-            reasons.append("Moderate sodium")
-        
-        score = max(0, min(100, score))
-        return score, "; ".join(reasons) if reasons else "Standard nutritional profile"
-
-# --- CSV Export Manager ---
-class CSVExportManager:
-    def __init__(self, debug=False):
-        self.debug = debug
-        self.export_dir = "exports"
-        
-        # Create exports directory if it doesn't exist
-        try:
-            if not os.path.exists(self.export_dir):
-                os.makedirs(self.export_dir)
-        except Exception as e:
-            if self.debug:
-                print(f"Warning: Could not create exports directory: {e}")
-            self.export_dir = "."  # Fallback to current directory
-    
-    def save_nutritional_data(self, food_items: Dict[str, Dict[str, float]], meal: str, campus: str):
-        """Save nutritional data to CSV file"""
-        try:
-            filepath = os.path.join(self.export_dir, f"{campus}_{meal}_{datetime.now().strftime('%Y%m%d')}_nutrition.csv")
-            
-            # Prepare data for CSV
-            csv_data = []
-            for food_name, nutrition in food_items.items():
-                row = {
-                    'food_name': food_name,
-                    'meal': meal,
-                    'campus': campus,
-                    'date': datetime.now().strftime('%Y-%m-%d'),
-                    'calories': nutrition.get('calories', 0),
-                    'protein': nutrition.get('protein', 0),
-                    'fat': nutrition.get('fat', 0),
-                    'saturated_fat': nutrition.get('saturated_fat', 0),
-                    'carbs': nutrition.get('carbs', 0),
-                    'fiber': nutrition.get('fiber', 0),
-                    'sugar': nutrition.get('sugar', 0),
-                    'sodium': nutrition.get('sodium', 0),
-                    'cholesterol': nutrition.get('cholesterol', 0)
-                }
-                csv_data.append(row)
-            
-            # Write to CSV
-            with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
-                fieldnames = ['food_name', 'meal', 'campus', 'date', 'calories', 'protein', 'fat', 
-                             'saturated_fat', 'carbs', 'fiber', 'sugar', 'sodium', 'cholesterol']
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                writer.writeheader()
-                writer.writerows(csv_data)
-            
-            if self.debug:
-                print(f"Saved nutritional data to {filepath}")
-            
-            return filepath
-            
-        except Exception as e:
-            if self.debug:
-                print(f"Error saving nutritional data: {e}")
-            return None
-    
-    def get_nutritional_insights(self, campus: str) -> Dict[str, any]:
-        """Analyze saved nutritional data to provide insights"""
-        try:
-            # Find the most recent nutrition file for this campus
-            files = []
-            if os.path.exists(self.export_dir):
-                for file in os.listdir(self.export_dir):
-                    if file.startswith(campus) and file.endswith("_nutrition.csv"):
-                        files.append(file)
-            
-            if not files:
-                return {"error": "No nutritional data found"}
-            
-            # Get the most recent file
-            latest_file = max(files, key=lambda x: os.path.getctime(os.path.join(self.export_dir, x)))
-            filepath = os.path.join(self.export_dir, latest_file)
-            
-            # Read and analyze the data
-            df = pd.read_csv(filepath)
-            
-            insights = {
-                "total_foods_analyzed": len(df),
-                "average_calories": float(df['calories'].mean()) if len(df) > 0 else 0,
-                "average_protein": float(df['protein'].mean()) if len(df) > 0 else 0,
-                "highest_protein_foods": df.nlargest(3, 'protein')[['food_name', 'protein']].to_dict('records') if len(df) > 0 else [],
-                "lowest_calorie_foods": df.nsmallest(3, 'calories')[['food_name', 'calories']].to_dict('records') if len(df) > 0 else [],
-                "high_fiber_foods": df[df['fiber'] >= 5][['food_name', 'fiber']].to_dict('records') if len(df) > 0 else [],
-                "low_sodium_foods": df[df['sodium'] <= 500][['food_name', 'sodium']].to_dict('records') if len(df) > 0 else []
-            }
-            
-            return insights
-            
-        except Exception as e:
-            if self.debug:
-                print(f"Error analyzing nutritional insights: {e}")
-            return {"error": f"Failed to analyze nutritional data: {str(e)}"}
-
-# --- Enhanced Menu Analyzer Class ---
+# --- Simplified Menu Analyzer Class ---
 class MenuAnalyzer:
     def __init__(self, campus_key: str, gemini_api_key: str = None, exclude_beef=False, exclude_pork=False,
-                 vegetarian=False, vegan=False, prioritize_protein=False, debug=False, extract_nutrition=True):
+                 vegetarian=False, vegan=False, prioritize_protein=False, debug=False, extract_nutrition=False):
         self.base_url = "https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm"
         self.campus_key = campus_key
         self.session = requests.Session()
@@ -291,10 +34,6 @@ class MenuAnalyzer:
         self.prioritize_protein = prioritize_protein
         self.extract_nutrition = extract_nutrition
         
-        # Initialize nutritional data extractor and CSV manager
-        self.nutrition_extractor = NutritionalDataExtractor(debug=debug)
-        self.csv_manager = CSVExportManager(debug=debug)
-        
         # Use the passed parameter or fall back to environment variable
         self.gemini_api_key = gemini_api_key or os.getenv('GEMINI_API_KEY')
         if self.gemini_api_key:
@@ -307,9 +46,6 @@ class MenuAnalyzer:
         
         if self.prioritize_protein and self.debug:
             print("INFO: Analysis is set to prioritize protein content.")
-        
-        if self.extract_nutrition and self.debug:
-            print("INFO: Nutritional data extraction is enabled.")
 
     def get_initial_form_data(self) -> Optional[Dict[str, Dict[str, str]]]:
         try:
@@ -402,30 +138,6 @@ class MenuAnalyzer:
         
         return None, ""
 
-    def extract_nutritional_data_for_items(self, items: Dict[str, str]) -> Dict[str, Dict[str, float]]:
-        """Extract nutritional data for all food items"""
-        nutrition_data = {}
-        
-        if not self.extract_nutrition:
-            return nutrition_data
-        
-        for food_name, url in items.items():
-            if self.debug:
-                print(f"Extracting nutrition data for: {food_name}")
-            
-            try:
-                nutrition = self.nutrition_extractor.extract_nutritional_data(url)
-                if nutrition:
-                    nutrition_data[food_name] = nutrition
-            except Exception as e:
-                if self.debug:
-                    print(f"Error extracting nutrition for {food_name}: {e}")
-            
-            # Add delay to avoid overwhelming the server
-            time.sleep(0.5)
-        
-        return nutrition_data
-
     def run_analysis(self) -> Dict[str, List[Tuple[str, int, str, str]]]:
         try:
             if self.debug:
@@ -482,17 +194,6 @@ class MenuAnalyzer:
                         daily_menu[meal_name] = items
                         if self.debug:
                             print(f"Found {len(items)} items for {meal_name}.")
-                        
-                        # Extract nutritional data if enabled
-                        if self.extract_nutrition:
-                            try:
-                                nutrition_data = self.extract_nutritional_data_for_items(items)
-                                if nutrition_data:
-                                    # Save nutritional data to CSV
-                                    self.csv_manager.save_nutritional_data(nutrition_data, meal_name, self.campus_key)
-                            except Exception as e:
-                                if self.debug:
-                                    print(f"Error extracting nutrition data for {meal_name}: {e}")
                     else:
                         # Explicitly mark meals with no items
                         daily_menu[meal_name] = {}
@@ -629,25 +330,6 @@ class MenuAnalyzer:
             item_lower = item.lower()
             score, reasoning = 50, []
             
-            # Try to get nutritional data if available
-            nutrition_score = 0
-            nutrition_reason = ""
-            if self.extract_nutrition and meal:
-                # Check if we have saved nutritional data for this item
-                try:
-                    nutrition_file = os.path.join(self.csv_manager.export_dir, f"{self.campus_key}_{meal}_{datetime.now().strftime('%Y%m%d')}_nutrition.csv")
-                    if os.path.exists(nutrition_file):
-                        df = pd.read_csv(nutrition_file)
-                        item_data = df[df['food_name'] == item]
-                        if not item_data.empty:
-                            nutrition_dict = item_data.iloc[0].to_dict()
-                            nutrition_score, nutrition_reason = self.nutrition_extractor.calculate_nutrition_score(nutrition_dict)
-                            score = (score + nutrition_score) / 2  # Average with base score
-                            reasoning.append(f"Nutrition-based: {nutrition_reason}")
-                except Exception as e:
-                    if self.debug:
-                        print(f"Error loading nutrition data for {item}: {e}")
-            
             # Original keyword-based analysis
             for level, keywords in protein_keywords.items():
                 if any(kw in item_lower for kw in keywords):
@@ -698,7 +380,7 @@ def analyze():
         exclude_beef = data.get('exclude_beef', False)
         exclude_pork = data.get('exclude_pork', False)
         prioritize_protein = data.get('prioritize_protein', False)
-        extract_nutrition = data.get('extract_nutrition', True)  # Default to True
+        extract_nutrition = data.get('extract_nutrition', False)  # Disabled for now
         
         print(f"Parsed parameters - campus: {campus}, vegetarian: {vegetarian}, vegan: {vegan}")
         
@@ -739,9 +421,7 @@ def analyze():
 def get_nutrition_insights(campus):
     """Get nutritional insights for a specific campus"""
     try:
-        csv_manager = CSVExportManager(debug=True)
-        insights = csv_manager.get_nutritional_insights(campus)
-        return jsonify(insights)
+        return jsonify({"error": "Nutritional insights not available in simplified mode"})
     except Exception as e:
         print(f"Error getting nutrition insights: {e}")
         return jsonify({"error": "Failed to get nutrition insights"}), 500
@@ -750,24 +430,7 @@ def get_nutrition_insights(campus):
 def download_nutrition_csv(campus):
     """Download the most recent nutrition CSV for a campus"""
     try:
-        csv_manager = CSVExportManager(debug=True)
-        export_dir = csv_manager.export_dir
-        
-        # Find the most recent nutrition file for this campus
-        files = []
-        if os.path.exists(export_dir):
-            for file in os.listdir(export_dir):
-                if file.startswith(campus) and file.endswith("_nutrition.csv"):
-                    files.append(file)
-        
-        if not files:
-            return jsonify({"error": "No nutrition data found"}), 404
-        
-        # Get the most recent file
-        latest_file = max(files, key=lambda x: os.path.getctime(os.path.join(export_dir, x)))
-        filepath = os.path.join(export_dir, latest_file)
-        
-        return send_from_directory(export_dir, latest_file, as_attachment=True)
+        return jsonify({"error": "Nutritional data download not available in simplified mode"})
     except Exception as e:
         print(f"Error downloading nutrition CSV: {e}")
         return jsonify({"error": "Failed to download nutrition data"}), 500

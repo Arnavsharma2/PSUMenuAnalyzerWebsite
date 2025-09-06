@@ -14,11 +14,99 @@ from urllib.parse import urljoin
 app = Flask(__name__)
 CORS(app)
 
+# Campus configuration mapping
+CAMPUS_CONFIG = {
+    'altoona-port-sky': {
+        'name': 'Altoona - Port Sky Cafe',
+        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
+        'campus_value': 'altoona'
+    },
+    'beaver-brodhead': {
+        'name': 'Beaver - Brodhead Bistro',
+        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
+        'campus_value': 'beaver'
+    },
+    'behrend-brunos': {
+        'name': 'Behrend - Bruno\'s',
+        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
+        'campus_value': 'behrend'
+    },
+    'behrend-dobbins': {
+        'name': 'Behrend - Dobbins',
+        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
+        'campus_value': 'behrend'
+    },
+    'berks-tullys': {
+        'name': 'Berks - Tully\'s',
+        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
+        'campus_value': 'berks'
+    },
+    'brandywine-blue-apple': {
+        'name': 'Brandywine - Blue Apple Cafe',
+        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
+        'campus_value': 'brandywine'
+    },
+    'greater-allegheny-cafe-metro': {
+        'name': 'Greater Allegheny - Cafe Metro',
+        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
+        'campus_value': 'greater-allegheny'
+    },
+    'harrisburg-stacks': {
+        'name': 'Harrisburg - Stacks',
+        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
+        'campus_value': 'harrisburg'
+    },
+    'harrisburg-outpost': {
+        'name': 'Harrisburg - The Outpost',
+        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
+        'campus_value': 'harrisburg'
+    },
+    'hazleton-highacres': {
+        'name': 'Hazleton - HighAcres Cafe',
+        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
+        'campus_value': 'hazleton'
+    },
+    'mont-alto-mill': {
+        'name': 'Mont Alto - The Mill Cafe',
+        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
+        'campus_value': 'mont-alto'
+    },
+    'up-east-findlay': {
+        'name': 'UP: East Food District @ Findlay',
+        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
+        'campus_value': 'up-east'
+    },
+    'up-north-warnock': {
+        'name': 'UP: North Food District @ Warnock',
+        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
+        'campus_value': 'up-north'
+    },
+    'up-pollock': {
+        'name': 'UP: Pollock Dining Commons',
+        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
+        'campus_value': 'up-pollock'
+    },
+    'up-south-redifer': {
+        'name': 'UP: South Food District @ Redifer',
+        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
+        'campus_value': 'up-south'
+    },
+    'up-west-waring': {
+        'name': 'UP: West Food District @ Waring',
+        'base_url': 'https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm',
+        'campus_value': 'up-west'
+    }
+}
+
 # --- Menu Analyzer Class ---
 class MenuAnalyzer:
-    def __init__(self, gemini_api_key: str = None, exclude_beef=False, exclude_pork=False,
+    def __init__(self, campus_key: str, gemini_api_key: str = None, exclude_beef=False, exclude_pork=False,
                  vegetarian=False, vegan=False, prioritize_protein=False, debug=False):
-        self.base_url = "https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm"
+        self.campus_config = CAMPUS_CONFIG.get(campus_key, CAMPUS_CONFIG['altoona-port-sky'])
+        self.base_url = self.campus_config['base_url']
+        self.campus_value = self.campus_config['campus_value']
+        self.campus_name = self.campus_config['name']
+        
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -87,16 +175,24 @@ class MenuAnalyzer:
         return items
 
     def run_analysis(self) -> Dict[str, List[Tuple[str, int, str, str]]]:
-        if self.debug: print("Fetching initial form options...")
+        if self.debug: 
+            print(f"Fetching initial form options for {self.campus_name}...")
+        
         form_options = self.get_initial_form_data()
         if not form_options:
             print("Could not fetch form data. Using fallback.")
             return self.get_fallback_data()
 
         campus_options = form_options.get('campus', {})
-        altoona_value = next((val for name, val in campus_options.items() if 'altoona' in name), None)
-        if not altoona_value:
-            print("Could not find Altoona campus value. Using fallback.")
+        # Look for the specific campus value
+        campus_value = None
+        for name, val in campus_options.items():
+            if self.campus_value in name.lower():
+                campus_value = val
+                break
+        
+        if not campus_value:
+            print(f"Could not find {self.campus_name} campus value. Using fallback.")
             return self.get_fallback_data()
 
         date_options = form_options.get('date', {})
@@ -123,7 +219,7 @@ class MenuAnalyzer:
                 continue
 
             try:
-                form_data = {'selCampus': altoona_value, 'selMeal': meal_value, 'selMenuDate': date_value}
+                form_data = {'selCampus': campus_value, 'selMeal': meal_value, 'selMenuDate': date_value}
                 if self.debug: print(f"Fetching menu for {meal_name} with data: {form_data}")
                 response = self.session.post(self.base_url, data=form_data, timeout=30)
                 response.raise_for_status()
@@ -286,7 +382,13 @@ def analyze():
         # Get API key from environment
         api_key = os.getenv('GEMINI_API_KEY')
 
+        # Determine campus based on the selected option
+        campus_key = data.get('campus')
+        if not campus_key:
+            return jsonify({"error": "Campus not selected."}), 400
+
         analyzer = MenuAnalyzer(
+            campus_key=campus_key,
             gemini_api_key=api_key,
             exclude_beef=exclude_beef,
             exclude_pork=exclude_pork,

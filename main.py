@@ -175,7 +175,7 @@ class NutritionalDataExtractor:
             score -= 5
             reasons.append("Moderate sodium")
         
-        score = max(0, min(100, round(score)))
+        score = max(0, min(100, score))
         return score, "; ".join(reasons) if reasons else "Standard nutritional profile"
 
 # --- CSV Export Manager ---
@@ -364,89 +364,11 @@ class MenuAnalyzer:
                 items[text] = full_url
         return items
 
-    def extract_items_with_gemini(self, soup: BeautifulSoup) -> Dict[str, str]:
-        """Extracts food items from a meal page's soup using Gemini to filter."""
-        if not self.gemini_api_key:
-            if self.debug:
-                print("Gemini API key not found. Falling back to local item extraction.")
-            return self.extract_items_from_meal_page(soup)
-
-        try:
-            page_text = soup.get_text(separator='\n', strip=True)
-            if not page_text or len(page_text) < 50:
-                 if self.debug:
-                    print("Page text is too short, likely no menu items. Skipping Gemini call.")
-                 return {}
-
-            prompt = f"""
-            From the following text from a university dining menu, identify and extract only the names of the food items.
-            Exclude all other text like "nutrition information", "allergens", "station names", "made to order", etc.
-            Return your response as a single, valid JSON object with a single key "foods" which is a list of strings.
-            For example: {{"foods": ["Scrambled Eggs", "Bacon", "Oatmeal"]}}
-
-            Here is the text to analyze:
-            ---
-            {page_text}
-            ---
-            """
-
-            response = self.session.post(
-                self.gemini_url,
-                headers={"Content-Type": "application/json"},
-                json={"contents": [{"parts": [{"text": prompt}]}]},
-                timeout=60
-            )
-            response.raise_for_status()
-            data = response.json()
-            
-            text_response = data["candidates"][0]["content"]["parts"][0]["text"]
-            json_str_match = re.search(r'\{.*\}', text_response, re.DOTALL)
-            if not json_str_match:
-                if self.debug:
-                    print(f"Gemini response did not contain valid JSON. Falling back. Response: {text_response}")
-                return self.extract_items_from_meal_page(soup)
-            
-            try:
-                parsed_json = json.loads(json_str_match.group(0))
-            except json.JSONDecodeError:
-                if self.debug:
-                    print(f"Failed to decode JSON from Gemini response. Falling back.")
-                return self.extract_items_from_meal_page(soup)
-
-            food_names_from_gemini = parsed_json.get("foods", [])
-
-            if not food_names_from_gemini:
-                 if self.debug:
-                    print("Gemini returned an empty list of foods.")
-                 return {}
-
-            if self.debug:
-                print(f"Gemini identified {len(food_names_from_gemini)} food items: {food_names_from_gemini}")
-
-            items = {}
-            gemini_food_set = {name.strip().lower() for name in food_names_from_gemini}
-
-            for a_tag in soup.find_all('a', href=True):
-                food_name = a_tag.get_text(strip=True)
-                if food_name.strip().lower() in gemini_food_set:
-                    relative_url = a_tag['href']
-                    full_url = urljoin(self.base_url, relative_url)
-                    items[food_name] = full_url
-            
-            if self.debug:
-                print(f"Matched {len(items)} items from Gemini's list to links on the page.")
-
-            return items
-
-        except Exception as e:
-            if self.debug:
-                print(f"Error during Gemini item extraction: {e}. Falling back to local method.")
-            return self.extract_items_from_meal_page(soup)
-
     def find_campus_value(self, campus_options: Dict[str, str]) -> Tuple[Optional[str], str]:
         """Find the correct campus value based on the campus key"""
         campus_key_lower = self.campus_key.lower()
         
+        # Mapping of our campus keys to search terms
         search_terms = {
             'altoona-port-sky': ['altoona', 'port sky'],
             'beaver-brodhead': ['beaver', 'brodhead'],
@@ -468,10 +390,12 @@ class MenuAnalyzer:
         
         terms = search_terms.get(campus_key_lower, [campus_key_lower])
         
+        # Try to find exact matches first
         for name, value in campus_options.items():
             if all(term in name for term in terms):
                 return value, name
         
+        # Try partial matches
         for name, value in campus_options.items():
             if any(term in name for term in terms):
                 return value, name
@@ -497,6 +421,7 @@ class MenuAnalyzer:
                 if self.debug:
                     print(f"Error extracting nutrition for {food_name}: {e}")
             
+            # Add delay to avoid overwhelming the server
             time.sleep(0.5)
         
         return nutrition_data
@@ -552,31 +477,24 @@ class MenuAnalyzer:
                     response = self.session.post(self.base_url, data=form_data, timeout=30)
                     response.raise_for_status()
                     meal_soup = BeautifulSoup(response.content, 'html.parser')
-                    
-                    # Use Gemini to extract items if an API key is provided, otherwise use local method
-                    if self.gemini_api_key:
-                        if self.debug:
-                            print(f"Using Gemini to extract items for {meal_name}...")
-                        items = self.extract_items_with_gemini(meal_soup)
-                    else:
-                        if self.debug:
-                            print(f"Using local method to extract items for {meal_name}...")
-                        items = self.extract_items_from_meal_page(meal_soup)
-
+                    items = self.extract_items_from_meal_page(meal_soup)
                     if items:
                         daily_menu[meal_name] = items
                         if self.debug:
                             print(f"Found {len(items)} items for {meal_name}.")
                         
+                        # Extract nutritional data if enabled
                         if self.extract_nutrition:
                             try:
                                 nutrition_data = self.extract_nutritional_data_for_items(items)
                                 if nutrition_data:
+                                    # Save nutritional data to CSV
                                     self.csv_manager.save_nutritional_data(nutrition_data, meal_name, self.campus_key)
                             except Exception as e:
                                 if self.debug:
                                     print(f"Error extracting nutrition data for {meal_name}: {e}")
                     else:
+                        # Explicitly mark meals with no items
                         daily_menu[meal_name] = {}
                         if self.debug:
                             print(f"No items found for {meal_name}.")
@@ -584,9 +502,10 @@ class MenuAnalyzer:
                 except requests.RequestException as e:
                     if self.debug:
                         print(f"Error fetching {meal_name} menu: {e}")
+                    # Mark as no items if there's an error
                     daily_menu[meal_name] = {}
 
-            if not any(daily_menu.values()):
+            if not daily_menu:
                 print("Failed to scrape any menu items from the website. Using fallback.")
                 return self.get_fallback_data()
             
@@ -594,7 +513,9 @@ class MenuAnalyzer:
             
             final_results = {}
             for meal, items in analyzed_results.items():
+                # First, apply the hard filters based on user preferences
                 filtered_items = self.apply_hard_filters(items)
+                # Then, slice the list to get only the top 5 items
                 final_results[meal] = filtered_items[:5]
             
             return final_results
@@ -623,6 +544,7 @@ class MenuAnalyzer:
             
             menu_for_prompt = {meal: list(items.keys()) for meal, items in daily_menu.items()}
 
+            # Ask for more items (e.g., 15) to allow for filtering down to 5.
             prompt = f"""
             Analyze the menu below. Your goal is to {priority_instruction}. My restrictions are: {restrictions_text}
             For EACH meal, identify the top 15 options.
@@ -643,8 +565,7 @@ class MenuAnalyzer:
                 for item_info in analyzed_items:
                     food_name = item_info.get("food_name")
                     url = daily_menu.get(meal, {}).get(food_name, '#')
-                    score = int(item_info.get("score", 50)) # Ensure score is an integer
-                    meal_results.append((food_name, score, item_info.get("reasoning"), url))
+                    meal_results.append((food_name, item_info.get("score"), item_info.get("reasoning"), url))
                 meal_results.sort(key=lambda x: x[1], reverse=True)
                 results[meal] = meal_results
             return results
@@ -688,7 +609,7 @@ class MenuAnalyzer:
     def analyze_menu_local(self, daily_menu: Dict[str, Dict[str, str]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
         results = {}
         for meal, items in daily_menu.items():
-            if not items:
+            if not items:  # Handle empty meals
                 results[meal] = []
             else:
                 analyzed_items = self.analyze_food_health_local_list(items, meal)
@@ -706,11 +627,13 @@ class MenuAnalyzer:
 
         for item, url in food_items.items():
             item_lower = item.lower()
-            score, reasoning = 50.0, []
+            score, reasoning = 50, []
             
+            # Try to get nutritional data if available
             nutrition_score = 0
             nutrition_reason = ""
             if self.extract_nutrition and meal:
+                # Check if we have saved nutritional data for this item
                 try:
                     nutrition_file = os.path.join(self.csv_manager.export_dir, f"{self.campus_key}_{meal}_{datetime.now().strftime('%Y%m%d')}_nutrition.csv")
                     if os.path.exists(nutrition_file):
@@ -719,12 +642,13 @@ class MenuAnalyzer:
                         if not item_data.empty:
                             nutrition_dict = item_data.iloc[0].to_dict()
                             nutrition_score, nutrition_reason = self.nutrition_extractor.calculate_nutrition_score(nutrition_dict)
-                            score = (score + nutrition_score) / 2
+                            score = (score + nutrition_score) / 2  # Average with base score
                             reasoning.append(f"Nutrition-based: {nutrition_reason}")
                 except Exception as e:
                     if self.debug:
                         print(f"Error loading nutrition data for {item}: {e}")
             
+            # Original keyword-based analysis
             for level, keywords in protein_keywords.items():
                 if any(kw in item_lower for kw in keywords):
                     score += protein_weights[level]
@@ -736,7 +660,7 @@ class MenuAnalyzer:
                     reasoning.append(f"Prep style ({level})")
                     break
             
-            score = max(0, min(100, round(score)))
+            score = max(0, min(100, score))
             health_scores.append((item, score, ", ".join(reasoning) or "Standard option", url))
         return health_scores
 
@@ -754,7 +678,7 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
-        'version': '2.0.1' # Incremented version
+        'version': '2.0.0'
     })
 
 @app.route('/api/analyze', methods=['POST'])
@@ -767,19 +691,22 @@ def analyze():
         if not data:
             return jsonify({"error": "No data provided"}), 400
         
+        # Simple validation
         campus = data.get('campus', 'altoona-port-sky')
         vegetarian = data.get('vegetarian', False)
         vegan = data.get('vegan', False)
         exclude_beef = data.get('exclude_beef', False)
         exclude_pork = data.get('exclude_pork', False)
         prioritize_protein = data.get('prioritize_protein', False)
-        extract_nutrition = data.get('extract_nutrition', True)
+        extract_nutrition = data.get('extract_nutrition', True)  # Default to True
         
         print(f"Parsed parameters - campus: {campus}, vegetarian: {vegetarian}, vegan: {vegan}")
         
+        # Validate that vegan and vegetarian aren't both selected
         if vegan and vegetarian:
             return jsonify({"error": "Cannot be both vegan and vegetarian"}), 400
         
+        # Get API key from environment
         api_key = os.getenv('GEMINI_API_KEY')
         print(f"Gemini API key available: {bool(api_key)}")
 
@@ -826,6 +753,7 @@ def download_nutrition_csv(campus):
         csv_manager = CSVExportManager(debug=True)
         export_dir = csv_manager.export_dir
         
+        # Find the most recent nutrition file for this campus
         files = []
         if os.path.exists(export_dir):
             for file in os.listdir(export_dir):
@@ -835,6 +763,7 @@ def download_nutrition_csv(campus):
         if not files:
             return jsonify({"error": "No nutrition data found"}), 404
         
+        # Get the most recent file
         latest_file = max(files, key=lambda x: os.path.getctime(os.path.join(export_dir, x)))
         filepath = os.path.join(export_dir, latest_file)
         

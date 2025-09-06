@@ -671,6 +671,10 @@ class MenuAnalyzer:
 def index():
     return send_from_directory('.', 'index.html')
 
+@app.route('/sw.js')
+def service_worker():
+    return send_from_directory('.', 'sw.js', mimetype='application/javascript')
+
 @app.route('/health')
 def health_check():
     return jsonify({
@@ -682,8 +686,12 @@ def health_check():
 @app.route('/api/analyze', methods=['POST'])
 def analyze():
     try:
+        print("=== ANALYZE REQUEST START ===")
         data = request.json
         print(f"Received request with data: {data}")
+        
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
         
         # Simple validation
         campus = data.get('campus', 'altoona-port-sky')
@@ -694,13 +702,17 @@ def analyze():
         prioritize_protein = data.get('prioritize_protein', False)
         extract_nutrition = data.get('extract_nutrition', True)  # Default to True
         
+        print(f"Parsed parameters - campus: {campus}, vegetarian: {vegetarian}, vegan: {vegan}")
+        
         # Validate that vegan and vegetarian aren't both selected
         if vegan and vegetarian:
             return jsonify({"error": "Cannot be both vegan and vegetarian"}), 400
         
         # Get API key from environment
         api_key = os.getenv('GEMINI_API_KEY')
+        print(f"Gemini API key available: {bool(api_key)}")
 
+        print("Creating MenuAnalyzer instance...")
         analyzer = MenuAnalyzer(
             campus_key=campus,
             gemini_api_key=api_key,
@@ -713,10 +725,12 @@ def analyze():
             extract_nutrition=extract_nutrition
         )
         
+        print("Running analysis...")
         recommendations = analyzer.run_analysis()
-        print(f"Returning recommendations: {recommendations}")
+        print(f"Analysis complete. Returning recommendations: {recommendations}")
         
         return jsonify(recommendations)
+        
     except Exception as e:
         print(f"[SERVER ERROR] {e}")
         import traceback

@@ -82,9 +82,17 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <!-- Vegetarian Toggle -->
                     <div id="vegetarian-pref" class="preference-item flex items-center justify-between bg-gray-50 p-4 rounded-lg">
-                        <span class="font-medium text-gray-700">Vegetarian</span>
+                        <span class="font-medium text-gray-700">Vegetarian (includes eggs)</span>
                         <label class="toggle-switch">
                             <input type="checkbox" id="vegetarian">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <!-- Vegan Toggle -->
+                    <div id="vegan-pref" class="preference-item flex items-center justify-between bg-gray-50 p-4 rounded-lg">
+                        <span class="font-medium text-gray-700">Vegan (no animal products)</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="vegan">
                             <span class="slider"></span>
                         </label>
                     </div>
@@ -136,19 +144,44 @@
             const analyzeBtn = document.getElementById('analyze-btn');
             const resultsContainer = document.getElementById('results-container');
             const vegetarianToggle = document.getElementById('vegetarian');
+            const veganToggle = document.getElementById('vegan');
             const beefPref = document.getElementById('beef-pref');
             const porkPref = document.getElementById('pork-pref');
 
-            // Logic to disable beef/pork toggles if vegetarian is selected
-            vegetarianToggle.addEventListener('change', () => {
+            // Logic to disable beef/pork toggles if vegetarian or vegan is selected
+            function updateToggleStates() {
                 const isVegetarian = vegetarianToggle.checked;
-                beefPref.classList.toggle('disabled', isVegetarian);
-                porkPref.classList.toggle('disabled', isVegetarian);
+                const isVegan = veganToggle.checked;
+                
+                // If vegan is selected, disable vegetarian
+                if (isVegan) {
+                    vegetarianToggle.checked = false;
+                    vegetarianToggle.disabled = true;
+                } else {
+                    vegetarianToggle.disabled = false;
+                }
+                
+                // If vegetarian is selected, disable vegan
                 if (isVegetarian) {
+                    veganToggle.checked = false;
+                    veganToggle.disabled = true;
+                } else {
+                    veganToggle.disabled = false;
+                }
+                
+                // Disable beef/pork if either vegetarian or vegan is selected
+                const shouldDisableMeat = isVegetarian || isVegan;
+                beefPref.classList.toggle('disabled', shouldDisableMeat);
+                porkPref.classList.toggle('disabled', shouldDisableMeat);
+                
+                if (shouldDisableMeat) {
                     document.getElementById('exclude-beef').checked = false;
                     document.getElementById('exclude-pork').checked = false;
                 }
-            });
+            }
+
+            vegetarianToggle.addEventListener('change', updateToggleStates);
+            veganToggle.addEventListener('change', updateToggleStates);
             
             analyzeBtn.addEventListener('click', async () => {
                 resultsContainer.innerHTML = `
@@ -159,6 +192,7 @@
 
                 const preferences = {
                     vegetarian: document.getElementById('vegetarian').checked,
+                    vegan: document.getElementById('vegan').checked,
                     exclude_beef: document.getElementById('exclude-beef').checked,
                     exclude_pork: document.getElementById('exclude-pork').checked,
                     prioritize_protein: document.getElementById('prioritize-protein').checked

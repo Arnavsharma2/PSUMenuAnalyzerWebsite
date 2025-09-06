@@ -19,7 +19,7 @@ CORS(app)
 # --- Menu Analyzer Class (Copied from original script) ---
 class MenuAnalyzer:
     def __init__(self, gemini_api_key: str = None, exclude_beef=False, exclude_pork=False,
-                 vegetarian=False, prioritize_protein=False, debug=False):
+                 vegetarian=False, vegan=False, prioritize_protein=False, debug=False):
         self.base_url = "https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm"
         self.session = requests.Session()
         self.session.headers.update({
@@ -29,6 +29,7 @@ class MenuAnalyzer:
         self.exclude_beef = exclude_beef
         self.exclude_pork = exclude_pork
         self.vegetarian = vegetarian
+        self.vegan = vegan
         self.prioritize_protein = prioritize_protein
         
         # Use the passed parameter or fall back to environment variable
@@ -157,6 +158,7 @@ class MenuAnalyzer:
         if self.exclude_beef: exclusions.append("No beef.")
         if self.exclude_pork: exclusions.append("No pork.")
         if self.vegetarian: exclusions.append("Only vegetarian items.")
+        if self.vegan: exclusions.append("Only vegan items.")
         restrictions_text = " ".join(exclusions) if exclusions else "None."
 
         priority_instruction = ("prioritize PROTEIN content" if self.prioritize_protein else "prioritize a BALANCE of high protein and healthy preparation")
@@ -193,7 +195,8 @@ class MenuAnalyzer:
             return self.analyze_menu_local(daily_menu)
 
     def apply_hard_filters(self, food_items: List[Tuple[str, int, str, str]]) -> List[Tuple[str, int, str, str]]:
-        if not (self.exclude_beef or self.exclude_pork or self.vegetarian): return food_items
+        if not (self.exclude_beef or self.exclude_pork or self.vegetarian or self.vegan): 
+            return food_items
         filtered_list = []
         for food, score, reason, url in food_items:
             item_lower = food.lower()
@@ -201,6 +204,7 @@ class MenuAnalyzer:
             if self.exclude_beef and "beef" in item_lower: excluded = True
             if self.exclude_pork and any(p in item_lower for p in ["pork", "bacon", "sausage", "ham"]): excluded = True
             if self.vegetarian and any(m in item_lower for m in ["beef", "pork", "chicken", "turkey", "fish", "salmon", "tuna", "bacon", "sausage", "ham"]): excluded = True
+            if self.vegan and any(m in item_lower for m in ["beef", "pork", "chicken", "turkey", "fish", "salmon", "tuna", "bacon", "sausage", "ham", "egg", "eggs", "dairy", "milk", "cheese", "butter", "yogurt"]): excluded = True
             if not excluded:
                 filtered_list.append((food, score, reason, url))
         return filtered_list
@@ -272,6 +276,7 @@ def analyze():
             exclude_beef=data.get('exclude_beef', False),
             exclude_pork=data.get('exclude_pork', False),
             vegetarian=data.get('vegetarian', False),
+            vegan=data.get('vegan', False),
             prioritize_protein=data.get('prioritize_protein', False),
             debug=True # Enable debug prints in the server console
         )

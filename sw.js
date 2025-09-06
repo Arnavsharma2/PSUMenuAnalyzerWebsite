@@ -1,16 +1,14 @@
 // Simple service worker for caching
 const CACHE_NAME = 'menu-analyzer-v1';
-const urlsToCache = [
-    '/',
-    '/index.html'
-];
 
 self.addEventListener('install', (event) => {
+    console.log('Service worker installing...');
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then((cache) => {
                 console.log('Opened cache');
-                return cache.addAll(urlsToCache);
+                // Don't try to cache files that might not exist
+                return Promise.resolve();
             })
             .catch((error) => {
                 console.log('Cache install failed:', error);

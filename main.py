@@ -28,14 +28,13 @@ class NutritionalDataExtractor:
     def extract_nutritional_data(self, url: str) -> Dict[str, float]:
         """Extract nutritional data from a PSU nutrition page"""
         try:
-            response = self.session.get(url, timeout=30)
+            response = self.session.get(url, timeout=10)
             response.raise_for_status()
             soup = BeautifulSoup(response.content, 'html.parser')
             
             nutrition_data = {}
             
             # Look for nutrition facts table or similar structure
-            # This is a generic approach - may need adjustment based on actual PSU nutrition page structure
             nutrition_tables = soup.find_all('table', class_=re.compile(r'nutrition|facts', re.I))
             
             for table in nutrition_tables:
@@ -183,7 +182,6 @@ class NutritionalDataExtractor:
 class CSVExportManager:
     def __init__(self, debug=False):
         self.debug = debug
-        self.nutrition_data_file = "nutritional_data.csv"
         self.export_dir = "exports"
         
         # Create exports directory if it doesn't exist

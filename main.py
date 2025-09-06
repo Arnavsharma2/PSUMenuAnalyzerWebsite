@@ -227,12 +227,24 @@ class MenuAnalyzer:
         if not date_options:
             return {"error": "No menu dates are available for this campus. This often happens on weekends or holidays."}
 
-        today_str_key = datetime.now().strftime('%A, %B %d').lower()
-        date_value = date_options.get(today_str_key)
+        # --- NEW ROBUST DATE FINDING LOGIC ---
+        now = datetime.now()
+        today_month = now.strftime('%B').lower()
+        today_day_num = str(now.day)
+        date_value = None
+
+        for date_text, value in date_options.items():
+            if today_month in date_text and re.search(r'\b' + today_day_num + r'\b', date_text):
+                date_value = value
+                if self.debug: print(f"Successfully matched today's date: '{date_text}'")
+                break
+        
         if not date_value:
+            if self.debug:
+                print(f"Warning: Could not find today's date ({today_month} {today_day_num}). Available: {list(date_options.keys())}. Using first available date as fallback.")
             date_value = next(iter(date_options.values()), None)
             if not date_value:
-                return {"error": "Could not determine a valid menu date to analyze."}
+                return {"error": "Could not determine a valid menu date to analyze after checking all available options."}
 
         daily_menu_data = {}
         for meal_name in ["Breakfast", "Lunch", "Dinner"]:

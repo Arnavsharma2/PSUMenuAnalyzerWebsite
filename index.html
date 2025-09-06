@@ -96,6 +96,42 @@
             <p class="mt-2 text-lg text-gray-600">Get personalized meal recommendations for Port Sky Cafe.</p>
         </header>
 
+        <!-- Health Score Explanation -->
+        <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-8 rounded-r-lg">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-blue-800">Understanding Health Scores</h3>
+                    <div class="mt-2 text-sm text-blue-700">
+                        <p class="mb-2">Each menu item receives a health score from 0-100 based on:</p>
+                        <ul class="list-disc list-inside space-y-1">
+                            <li><strong>Protein Content:</strong> High-protein items (chicken, salmon, eggs) score higher</li>
+                            <li><strong>Cooking Method:</strong> Grilled, baked, and steamed items score better than fried options</li>
+                            <li><strong>Nutritional Balance:</strong> Items with better macro and micronutrient profiles</li>
+                        </ul>
+                        <div class="mt-3 flex items-center space-x-4 text-xs">
+                            <div class="flex items-center">
+                                <div class="w-4 h-4 bg-green-100 text-green-800 rounded-full flex items-center justify-center font-bold mr-2">80+</div>
+                                <span>Excellent</span>
+                            </div>
+                            <div class="flex items-center">
+                                <div class="w-4 h-4 bg-yellow-100 text-yellow-800 rounded-full flex items-center justify-center font-bold mr-2">60-79</div>
+                                <span>Good</span>
+                            </div>
+                            <div class="flex items-center">
+                                <div class="w-4 h-4 bg-red-100 text-red-800 rounded-full flex items-center justify-center font-bold mr-2">0-59</div>
+                                <span>Fair</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <main>
             <div class="bg-white rounded-lg shadow-md p-6 mb-8">
                 <h2 class="text-2xl font-semibold mb-4 text-gray-800">Your Dietary Preferences</h2>
@@ -155,7 +191,25 @@
         </main>
         
         <footer class="text-center mt-12 text-sm text-gray-500">
-            <p>Powered by Gemini. This is an independent project and not affiliated with Penn State.</p>
+            <div class="mb-4">
+                <p>Powered by Gemini AI. This is an independent project and not affiliated with Penn State.</p>
+            </div>
+            <div class="border-t border-gray-200 pt-4">
+                <p class="font-medium text-gray-700 mb-2">Contact & Support</p>
+                <p class="mb-1">
+                    <span class="font-medium">Arnav Sharma</span>
+                </p>
+                <p class="mb-1">
+                    <a href="mailto:arnav.sharma2264@gmail.com" class="text-blue-600 hover:text-blue-800 hover:underline">
+                        arnav.sharma2264@gmail.com
+                    </a>
+                </p>
+                <p>
+                    <a href="https://github.com/Arnavsharma2" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 hover:underline">
+                        github.com/Arnavsharma2
+                    </a>
+                </p>
+            </div>
         </footer>
     </div>
 

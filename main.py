@@ -11,22 +11,46 @@ import time
 from urllib.parse import urljoin
 import csv
 import pandas as pd
-import google.generativeai as genai
+
+# Try to import Gemini AI, but don't fail if it's not available
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    print("Warning: google-generativeai not available. AI filtering will be disabled.")
 
 # --- Flask App Initialization ---
 app = Flask(__name__)
 CORS(app)
 
-# Configure Gemini AI
-genai.configure(api_key=os.getenv('GEMINI_API_KEY', 'your-gemini-api-key-here'))
+# Configure Gemini AI if available
+if GEMINI_AVAILABLE:
+    try:
+        genai.configure(api_key=os.getenv('GEMINI_API_KEY', 'your-gemini-api-key-here'))
+    except Exception as e:
+        print(f"Warning: Could not configure Gemini AI: {e}")
+        GEMINI_AVAILABLE = False
 
 # --- AI Food Filter Class ---
 class AIFoodFilter:
     def __init__(self):
-        self.model = genai.GenerativeModel('gemini-pro')
+        if GEMINI_AVAILABLE:
+            try:
+                self.model = genai.GenerativeModel('gemini-pro')
+                self.available = True
+            except Exception as e:
+                print(f"Warning: Could not initialize Gemini model: {e}")
+                self.available = False
+        else:
+            self.available = False
     
     def filter_food_items(self, items, meal_type, location):
         """Use Gemini AI to filter out non-food items"""
+        if not self.available:
+            # Fallback to simple filtering
+            return self.simple_filter(items)
+        
         try:
             # Create a prompt for Gemini to identify food items
             prompt = f"""
@@ -62,11 +86,31 @@ class AIFoodFilter:
                 return filtered_items if isinstance(filtered_items, list) else items
             except json.JSONDecodeError:
                 print(f"Failed to parse Gemini response: {response.text}")
-                return items
+                return self.simple_filter(items)
                 
         except Exception as e:
             print(f"Error using Gemini AI: {e}")
-            return items
+            return self.simple_filter(items)
+    
+    def simple_filter(self, items):
+        """Simple fallback filtering when AI is not available"""
+        non_food_keywords = [
+            'home', 'menu', 'dining', 'campus', 'set', 'dietary', 'filters',
+            'breakfast', 'lunch', 'dinner', 'hours', 'contact', 'about',
+            'nutrition', 'allergen', 'ingredient', 'recipe', 'cooking',
+            'preparation', 'serving', 'portion', 'size', 'calorie',
+            'protein', 'fat', 'carb', 'fiber', 'sugar', 'sodium',
+            'vitamin', 'mineral', 'nutrient', 'health', 'wellness'
+        ]
+        
+        filtered_items = []
+        for item in items:
+            if item and len(item.strip()) > 2:
+                item_lower = item.lower().strip()
+                if not any(keyword in item_lower for keyword in non_food_keywords):
+                    filtered_items.append(item)
+        
+        return filtered_items
 
 # Initialize AI filter
 ai_filter = AIFoodFilter()

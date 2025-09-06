@@ -3,8 +3,6 @@ from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import requests
-import aiohttp
-import asyncio
 from bs4 import BeautifulSoup
 import json
 import re
@@ -14,14 +12,11 @@ import os
 import time
 import sqlite3
 import hashlib
-import bleach
 import logging
 from functools import lru_cache, wraps
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pydantic import BaseModel, validator
-from concurrent.futures import ThreadPoolExecutor
-from urllib.parse import urljoin
 
 # --- Configuration ---
 @dataclass
@@ -93,9 +88,6 @@ class MenuPreferences(BaseModel):
         return v
 
 # --- Utility Functions ---
-def sanitize_input(text):
-    return bleach.clean(text, tags=[], strip=True)
-
 def retry_on_failure(max_retries=3, delay=1):
     def decorator(func):
         @wraps(func)
@@ -124,41 +116,54 @@ def log_analysis_request(preferences, duration, success):
 
 def get_cached_menu_analysis(preferences_hash):
     """Check if we have recent analysis for these preferences"""
-    with get_db_connection() as conn:
-        cursor = conn.execute(
-            'SELECT result FROM menu_cache WHERE preferences_hash = ? AND created_at > datetime("now", "-1 hour")',
-            (preferences_hash,)
-        )
-        result = cursor.fetchone()
-        return json.loads(result[0]) if result else None
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.execute(
+                'SELECT result FROM menu_cache WHERE preferences_hash = ? AND created_at > datetime("now", "-1 hour")',
+                (preferences_hash,)
+            )
+            result = cursor.fetchone()
+            return json.loads(result[0]) if result else None
+    except Exception as e:
+        logger.error(f"Error getting cached analysis: {e}")
+        return None
 
 def cache_menu_analysis(preferences_hash, result):
     """Cache menu analysis result"""
-    with get_db_connection() as conn:
-        conn.execute(
-            'INSERT OR REPLACE INTO menu_cache (preferences_hash, result) VALUES (?, ?)',
-            (preferences_hash, json.dumps(result))
-        )
+    try:
+        with get_db_connection() as conn:
+            conn.execute(
+                'INSERT OR REPLACE INTO menu_cache (preferences_hash, result) VALUES (?, ?)',
+                (preferences_hash, json.dumps(result))
+            )
+    except Exception as e:
+        logger.error(f"Error caching analysis: {e}")
 
 @lru_cache(maxsize=1)
 def get_cached_form_data():
     """Cache form data for 1 hour to reduce API calls"""
-    with get_db_connection() as conn:
-        cursor = conn.execute(
-            'SELECT data FROM form_cache WHERE created_at > datetime("now", "-1 hour") ORDER BY created_at DESC LIMIT 1'
-        )
-        result = cursor.fetchone()
-        if result:
-            return json.loads(result[0])
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.execute(
+                'SELECT data FROM form_cache WHERE created_at > datetime("now", "-1 hour") ORDER BY created_at DESC LIMIT 1'
+            )
+            result = cursor.fetchone()
+            if result:
+                return json.loads(result[0])
+    except Exception as e:
+        logger.error(f"Error getting cached form data: {e}")
     return None
 
 def cache_form_data(data):
     """Cache form data"""
-    with get_db_connection() as conn:
-        conn.execute(
-            'INSERT INTO form_cache (data) VALUES (?)',
-            (json.dumps(data),)
-        )
+    try:
+        with get_db_connection() as conn:
+            conn.execute(
+                'INSERT INTO form_cache (data) VALUES (?)',
+                (json.dumps(data),)
+            )
+    except Exception as e:
+        logger.error(f"Error caching form data: {e}")
 
 # --- Menu Analyzer Class ---
 class MenuAnalyzer:
@@ -242,37 +247,6 @@ class MenuAnalyzer:
                 items[text] = full_url
         return items
 
-    async def fetch_meal_async(self, session, meal_name, meal_value, altoona_value, date_value):
-        """Async function to fetch a single meal"""
-        try:
-            form_data = {'selCampus': altoona_value, 'selMeal': meal_value, 'selMenuDate': date_value}
-            async with session.post(self.base_url, data=form_data, timeout=config.REQUEST_TIMEOUT) as response:
-                response.raise_for_status()
-                content = await response.text()
-                soup = BeautifulSoup(content, 'html.parser')
-                items = self.extract_items_from_meal_page(soup)
-                return meal_name, items
-        except Exception as e:
-            logger.error(f"Error fetching {meal_name} menu: {e}")
-            return meal_name, {}
-
-    async def fetch_all_meals_parallel(self, meal_options, altoona_value, date_value):
-        """Fetch all meals in parallel for better performance"""
-        async with aiohttp.ClientSession() as session:
-            tasks = []
-            for meal_name, meal_value in meal_options.items():
-                task = self.fetch_meal_async(session, meal_name, meal_value, altoona_value, date_value)
-                tasks.append(task)
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            daily_menu = {}
-            for result in results:
-                if isinstance(result, tuple):
-                    meal_name, items = result
-                    if items:
-                        daily_menu[meal_name] = items
-            return daily_menu
-
     def run_analysis(self) -> Dict[str, List[Tuple[str, int, str, str]]]:
         start_time = time.time()
         
@@ -302,42 +276,10 @@ class MenuAnalyzer:
                 logger.warning("No dates found. Using fallback.")
                 return self.get_fallback_data()
 
+        daily_menu = {}
         meal_options = form_options.get('meal', {})
         
-        # Use async parallel fetching for better performance
-        try:
-            daily_menu = asyncio.run(self.fetch_all_meals_parallel(meal_options, altoona_value, date_value))
-        except Exception as e:
-            logger.error(f"Async fetching failed, falling back to sequential: {e}")
-            daily_menu = self.fetch_meals_sequential(meal_options, altoona_value, date_value)
-
-        if not daily_menu:
-            logger.warning("Failed to scrape any menu items from the website. Using fallback.")
-            return self.get_fallback_data()
-        
-        analyzed_results = self.analyze_menu_with_gemini(daily_menu) if self.gemini_api_key else self.analyze_menu_local(daily_menu)
-        
-        final_results = {}
-        for meal, items in analyzed_results.items():
-            # First, apply the hard filters based on user preferences
-            filtered_items = self.apply_hard_filters(items)
-            # Then, slice the list to get only the top 5 items
-            final_results[meal] = filtered_items[:5]
-        
-        duration = time.time() - start_time
-        log_analysis_request({
-            'vegetarian': self.vegetarian,
-            'vegan': self.vegan,
-            'exclude_beef': self.exclude_beef,
-            'exclude_pork': self.exclude_pork,
-            'prioritize_protein': self.prioritize_protein
-        }, duration, True)
-        
-        return final_results
-
-    def fetch_meals_sequential(self, meal_options, altoona_value, date_value):
-        """Fallback sequential fetching if async fails"""
-        daily_menu = {}
+        # Sequential fetching (simplified for reliability)
         for meal_name in ["Breakfast", "Lunch", "Dinner"]:
             meal_key = meal_name.lower()
             meal_value = meal_options.get(meal_key)
@@ -364,7 +306,29 @@ class MenuAnalyzer:
                 if self.debug: 
                     logger.error(f"Error fetching {meal_name} menu: {e}")
 
-        return daily_menu
+        if not daily_menu:
+            logger.warning("Failed to scrape any menu items from the website. Using fallback.")
+            return self.get_fallback_data()
+        
+        analyzed_results = self.analyze_menu_with_gemini(daily_menu) if self.gemini_api_key else self.analyze_menu_local(daily_menu)
+        
+        final_results = {}
+        for meal, items in analyzed_results.items():
+            # First, apply the hard filters based on user preferences
+            filtered_items = self.apply_hard_filters(items)
+            # Then, slice the list to get only the top 5 items
+            final_results[meal] = filtered_items[:5]
+        
+        duration = time.time() - start_time
+        log_analysis_request({
+            'vegetarian': self.vegetarian,
+            'vegan': self.vegan,
+            'exclude_beef': self.exclude_beef,
+            'exclude_pork': self.exclude_pork,
+            'prioritize_protein': self.prioritize_protein
+        }, duration, True)
+        
+        return final_results
 
     def analyze_menu_with_gemini(self, daily_menu: Dict[str, Dict[str, str]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
         exclusions = []
@@ -488,6 +452,7 @@ def analyze():
     start_time = time.time()
     try:
         data = request.json
+        logger.info(f"Received request with data: {data}")
         
         # Validate input
         try:

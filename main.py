@@ -187,8 +187,13 @@ class CSVExportManager:
         self.export_dir = "exports"
         
         # Create exports directory if it doesn't exist
-        if not os.path.exists(self.export_dir):
-            os.makedirs(self.export_dir)
+        try:
+            if not os.path.exists(self.export_dir):
+                os.makedirs(self.export_dir)
+        except Exception as e:
+            if self.debug:
+                print(f"Warning: Could not create exports directory: {e}")
+            self.export_dir = "."  # Fallback to current directory
     
     def save_nutritional_data(self, food_items: Dict[str, Dict[str, float]], meal: str, campus: str):
         """Save nutritional data to CSV file"""
@@ -237,11 +242,11 @@ class CSVExportManager:
         """Analyze saved nutritional data to provide insights"""
         try:
             # Find the most recent nutrition file for this campus
-            pattern = f"{campus}_*_nutrition.csv"
             files = []
-            for file in os.listdir(self.export_dir):
-                if file.startswith(campus) and file.endswith("_nutrition.csv"):
-                    files.append(file)
+            if os.path.exists(self.export_dir):
+                for file in os.listdir(self.export_dir):
+                    if file.startswith(campus) and file.endswith("_nutrition.csv"):
+                        files.append(file)
             
             if not files:
                 return {"error": "No nutritional data found"}
@@ -255,12 +260,12 @@ class CSVExportManager:
             
             insights = {
                 "total_foods_analyzed": len(df),
-                "average_calories": df['calories'].mean(),
-                "average_protein": df['protein'].mean(),
-                "highest_protein_foods": df.nlargest(3, 'protein')[['food_name', 'protein']].to_dict('records'),
-                "lowest_calorie_foods": df.nsmallest(3, 'calories')[['food_name', 'calories']].to_dict('records'),
-                "high_fiber_foods": df[df['fiber'] >= 5][['food_name', 'fiber']].to_dict('records'),
-                "low_sodium_foods": df[df['sodium'] <= 500][['food_name', 'sodium']].to_dict('records')
+                "average_calories": float(df['calories'].mean()) if len(df) > 0 else 0,
+                "average_protein": float(df['protein'].mean()) if len(df) > 0 else 0,
+                "highest_protein_foods": df.nlargest(3, 'protein')[['food_name', 'protein']].to_dict('records') if len(df) > 0 else [],
+                "lowest_calorie_foods": df.nsmallest(3, 'calories')[['food_name', 'calories']].to_dict('records') if len(df) > 0 else [],
+                "high_fiber_foods": df[df['fiber'] >= 5][['food_name', 'fiber']].to_dict('records') if len(df) > 0 else [],
+                "low_sodium_foods": df[df['sodium'] <= 500][['food_name', 'sodium']].to_dict('records') if len(df) > 0 else []
             }
             
             return insights
@@ -410,9 +415,13 @@ class MenuAnalyzer:
             if self.debug:
                 print(f"Extracting nutrition data for: {food_name}")
             
-            nutrition = self.nutrition_extractor.extract_nutritional_data(url)
-            if nutrition:
-                nutrition_data[food_name] = nutrition
+            try:
+                nutrition = self.nutrition_extractor.extract_nutritional_data(url)
+                if nutrition:
+                    nutrition_data[food_name] = nutrition
+            except Exception as e:
+                if self.debug:
+                    print(f"Error extracting nutrition for {food_name}: {e}")
             
             # Add delay to avoid overwhelming the server
             time.sleep(0.5)
@@ -420,118 +429,131 @@ class MenuAnalyzer:
         return nutrition_data
 
     def run_analysis(self) -> Dict[str, List[Tuple[str, int, str, str]]]:
-        if self.debug:
-            print(f"Fetching initial form options for campus: {self.campus_key}")
-        
-        form_options = self.get_initial_form_data()
-        if not form_options:
-            print("Could not fetch form data. Using fallback.")
-            return self.get_fallback_data()
-
-        campus_options = form_options.get('campus', {})
-        campus_value, campus_name_found = self.find_campus_value(campus_options)
-        
-        if not campus_value:
-            print(f"Could not find campus value for {self.campus_key}. Available options: {list(campus_options.keys())}")
-            return self.get_fallback_data()
-        
-        if self.debug:
-            print(f"Found campus: {campus_name_found} with value: {campus_value}")
-
-        date_options = form_options.get('date', {})
-        today_str_key = datetime.now().strftime('%A, %B %d').lower()
-        date_value = date_options.get(today_str_key)
-        if not date_value:
-            if date_options:
-                first_available_date = list(date_options.keys())[0]
-                date_value = list(date_options.values())[0]
-                print(f"Warning: Today's menu ('{today_str_key}') not found. Using first available date: {first_available_date}")
-            else:
-                print("No dates found. Using fallback.")
+        try:
+            if self.debug:
+                print(f"Fetching initial form options for campus: {self.campus_key}")
+            
+            form_options = self.get_initial_form_data()
+            if not form_options:
+                print("Could not fetch form data. Using fallback.")
                 return self.get_fallback_data()
 
-        daily_menu = {}
-        meal_options = form_options.get('meal', {})
-        
-        for meal_name in ["Breakfast", "Lunch", "Dinner"]:
-            meal_key = meal_name.lower()
-            meal_value = meal_options.get(meal_key)
+            campus_options = form_options.get('campus', {})
+            campus_value, campus_name_found = self.find_campus_value(campus_options)
             
-            if not meal_value:
-                if self.debug:
-                    print(f"Could not find form value for '{meal_name}'. Skipping.")
-                continue
+            if not campus_value:
+                print(f"Could not find campus value for {self.campus_key}. Available options: {list(campus_options.keys())}")
+                return self.get_fallback_data()
+            
+            if self.debug:
+                print(f"Found campus: {campus_name_found} with value: {campus_value}")
 
-            try:
-                form_data = {'selCampus': campus_value, 'selMeal': meal_value, 'selMenuDate': date_value}
-                if self.debug:
-                    print(f"Fetching menu for {meal_name} with data: {form_data}")
-                response = self.session.post(self.base_url, data=form_data, timeout=30)
-                response.raise_for_status()
-                meal_soup = BeautifulSoup(response.content, 'html.parser')
-                items = self.extract_items_from_meal_page(meal_soup)
-                if items:
-                    daily_menu[meal_name] = items
-                    if self.debug:
-                        print(f"Found {len(items)} items for {meal_name}.")
-                    
-                    # Extract nutritional data if enabled
-                    if self.extract_nutrition:
-                        nutrition_data = self.extract_nutritional_data_for_items(items)
-                        if nutrition_data:
-                            # Save nutritional data to CSV
-                            self.csv_manager.save_nutritional_data(nutrition_data, meal_name, self.campus_key)
+            date_options = form_options.get('date', {})
+            today_str_key = datetime.now().strftime('%A, %B %d').lower()
+            date_value = date_options.get(today_str_key)
+            if not date_value:
+                if date_options:
+                    first_available_date = list(date_options.keys())[0]
+                    date_value = list(date_options.values())[0]
+                    print(f"Warning: Today's menu ('{today_str_key}') not found. Using first available date: {first_available_date}")
                 else:
-                    # Explicitly mark meals with no items
-                    daily_menu[meal_name] = {}
-                    if self.debug:
-                        print(f"No items found for {meal_name}.")
-                time.sleep(0.5)
-            except requests.RequestException as e:
-                if self.debug:
-                    print(f"Error fetching {meal_name} menu: {e}")
-                # Mark as no items if there's an error
-                daily_menu[meal_name] = {}
+                    print("No dates found. Using fallback.")
+                    return self.get_fallback_data()
 
-        if not daily_menu:
-            print("Failed to scrape any menu items from the website. Using fallback.")
+            daily_menu = {}
+            meal_options = form_options.get('meal', {})
+            
+            for meal_name in ["Breakfast", "Lunch", "Dinner"]:
+                meal_key = meal_name.lower()
+                meal_value = meal_options.get(meal_key)
+                
+                if not meal_value:
+                    if self.debug:
+                        print(f"Could not find form value for '{meal_name}'. Skipping.")
+                    continue
+
+                try:
+                    form_data = {'selCampus': campus_value, 'selMeal': meal_value, 'selMenuDate': date_value}
+                    if self.debug:
+                        print(f"Fetching menu for {meal_name} with data: {form_data}")
+                    response = self.session.post(self.base_url, data=form_data, timeout=30)
+                    response.raise_for_status()
+                    meal_soup = BeautifulSoup(response.content, 'html.parser')
+                    items = self.extract_items_from_meal_page(meal_soup)
+                    if items:
+                        daily_menu[meal_name] = items
+                        if self.debug:
+                            print(f"Found {len(items)} items for {meal_name}.")
+                        
+                        # Extract nutritional data if enabled
+                        if self.extract_nutrition:
+                            try:
+                                nutrition_data = self.extract_nutritional_data_for_items(items)
+                                if nutrition_data:
+                                    # Save nutritional data to CSV
+                                    self.csv_manager.save_nutritional_data(nutrition_data, meal_name, self.campus_key)
+                            except Exception as e:
+                                if self.debug:
+                                    print(f"Error extracting nutrition data for {meal_name}: {e}")
+                    else:
+                        # Explicitly mark meals with no items
+                        daily_menu[meal_name] = {}
+                        if self.debug:
+                            print(f"No items found for {meal_name}.")
+                    time.sleep(0.5)
+                except requests.RequestException as e:
+                    if self.debug:
+                        print(f"Error fetching {meal_name} menu: {e}")
+                    # Mark as no items if there's an error
+                    daily_menu[meal_name] = {}
+
+            if not daily_menu:
+                print("Failed to scrape any menu items from the website. Using fallback.")
+                return self.get_fallback_data()
+            
+            analyzed_results = self.analyze_menu_with_gemini(daily_menu) if self.gemini_api_key else self.analyze_menu_local(daily_menu)
+            
+            final_results = {}
+            for meal, items in analyzed_results.items():
+                # First, apply the hard filters based on user preferences
+                filtered_items = self.apply_hard_filters(items)
+                # Then, slice the list to get only the top 5 items
+                final_results[meal] = filtered_items[:5]
+            
+            return final_results
+            
+        except Exception as e:
+            if self.debug:
+                print(f"Error in run_analysis: {e}")
+                import traceback
+                traceback.print_exc()
             return self.get_fallback_data()
-        
-        analyzed_results = self.analyze_menu_with_gemini(daily_menu) if self.gemini_api_key else self.analyze_menu_local(daily_menu)
-        
-        final_results = {}
-        for meal, items in analyzed_results.items():
-            # First, apply the hard filters based on user preferences
-            filtered_items = self.apply_hard_filters(items)
-            # Then, slice the list to get only the top 5 items
-            final_results[meal] = filtered_items[:5]
-        
-        return final_results
 
     def analyze_menu_with_gemini(self, daily_menu: Dict[str, Dict[str, str]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
-        exclusions = []
-        if self.exclude_beef:
-            exclusions.append("No beef.")
-        if self.exclude_pork:
-            exclusions.append("No pork.")
-        if self.vegetarian:
-            exclusions.append("Only vegetarian items (includes eggs).")
-        if self.vegan:
-            exclusions.append("Only vegan items (no animal products including eggs and dairy).")
-        restrictions_text = " ".join(exclusions) if exclusions else "None."
-
-        priority_instruction = ("prioritize PROTEIN content" if self.prioritize_protein else "prioritize a BALANCE of high protein and healthy preparation")
-        
-        menu_for_prompt = {meal: list(items.keys()) for meal, items in daily_menu.items()}
-
-        # Ask for more items (e.g., 15) to allow for filtering down to 5.
-        prompt = f"""
-        Analyze the menu below. Your goal is to {priority_instruction}. My restrictions are: {restrictions_text}
-        For EACH meal, identify the top 15 options.
-        Return your response as a single, valid JSON object with keys "Breakfast", "Lunch", "Dinner". Each value should be a list of objects, each with "food_name", "score" (0-100), and "reasoning".
-        Menu: {json.dumps(menu_for_prompt, indent=2)}
-        """
         try:
+            exclusions = []
+            if self.exclude_beef:
+                exclusions.append("No beef.")
+            if self.exclude_pork:
+                exclusions.append("No pork.")
+            if self.vegetarian:
+                exclusions.append("Only vegetarian items (includes eggs).")
+            if self.vegan:
+                exclusions.append("Only vegan items (no animal products including eggs and dairy).")
+            restrictions_text = " ".join(exclusions) if exclusions else "None."
+
+            priority_instruction = ("prioritize PROTEIN content" if self.prioritize_protein else "prioritize a BALANCE of high protein and healthy preparation")
+            
+            menu_for_prompt = {meal: list(items.keys()) for meal, items in daily_menu.items()}
+
+            # Ask for more items (e.g., 15) to allow for filtering down to 5.
+            prompt = f"""
+            Analyze the menu below. Your goal is to {priority_instruction}. My restrictions are: {restrictions_text}
+            For EACH meal, identify the top 15 options.
+            Return your response as a single, valid JSON object with keys "Breakfast", "Lunch", "Dinner". Each value should be a list of objects, each with "food_name", "score" (0-100), and "reasoning".
+            Menu: {json.dumps(menu_for_prompt, indent=2)}
+            """
+            
             response = self.session.post(self.gemini_url, headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=60)
             response.raise_for_status()
             data = response.json()
@@ -624,8 +646,9 @@ class MenuAnalyzer:
                             nutrition_score, nutrition_reason = self.nutrition_extractor.calculate_nutrition_score(nutrition_dict)
                             score = (score + nutrition_score) / 2  # Average with base score
                             reasoning.append(f"Nutrition-based: {nutrition_reason}")
-                except:
-                    pass  # Fall back to keyword-based analysis
+                except Exception as e:
+                    if self.debug:
+                        print(f"Error loading nutrition data for {item}: {e}")
             
             # Original keyword-based analysis
             for level, keywords in protein_keywords.items():
@@ -698,7 +721,7 @@ def analyze():
         print(f"[SERVER ERROR] {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({"error": "An internal server error occurred."}), 500
+        return jsonify({"error": f"An internal server error occurred: {str(e)}"}), 500
 
 @app.route('/api/nutrition-insights/<campus>')
 def get_nutrition_insights(campus):
@@ -720,9 +743,10 @@ def download_nutrition_csv(campus):
         
         # Find the most recent nutrition file for this campus
         files = []
-        for file in os.listdir(export_dir):
-            if file.startswith(campus) and file.endswith("_nutrition.csv"):
-                files.append(file)
+        if os.path.exists(export_dir):
+            for file in os.listdir(export_dir):
+                if file.startswith(campus) and file.endswith("_nutrition.csv"):
+                    files.append(file)
         
         if not files:
             return jsonify({"error": "No nutrition data found"}), 404

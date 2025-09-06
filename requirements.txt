@@ -3,3 +3,7 @@ Flask-Cors
 requests
 beautifulsoup4
 gunicorn
+aiohttp
+pydantic
+flask-limiter
+bleach

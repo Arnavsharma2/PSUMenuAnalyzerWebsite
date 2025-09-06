@@ -67,6 +67,26 @@
             opacity: 0.5;
             pointer-events: none;
         }
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background-color: #e5e7eb;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #3b82f6;
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
 </head>
 <body class="antialiased text-gray-800 p-4 sm:p-6 md:p-8">
@@ -140,6 +160,74 @@
     </div>
 
     <script>
+        // Utility functions
+        const debounce = (func, delay) => {
+            let timeoutId;
+            return (...args) => {
+                clearTimeout(timeoutId);
+                timeoutId = setTimeout(() => func.apply(this, args), delay);
+            };
+        };
+
+        const showLoadingState = (message = "Analyzing menu...", showProgress = false) => {
+            const progressHtml = showProgress ? `
+                <div class="progress-bar mt-4">
+                    <div class="progress-fill" style="width: 0%"></div>
+                </div>
+                <p class="mt-2 text-sm text-gray-500">This may take 10-15 seconds...</p>
+            ` : '';
+            
+            resultsContainer.innerHTML = `
+                <div class="flex flex-col items-center justify-center p-6 bg-white rounded-lg shadow-md fade-in">
+                    <div id="loader"></div>
+                    <p class="mt-4 text-gray-600 font-medium">${message}</p>
+                    ${progressHtml}
+                </div>`;
+        };
+
+        const showProgress = (step, total) => {
+            const progressFill = document.querySelector('.progress-fill');
+            if (progressFill) {
+                const progress = (step / total) * 100;
+                progressFill.style.width = `${progress}%`;
+            }
+        };
+
+        const savePreferences = (preferences) => {
+            try {
+                localStorage.setItem('menuPreferences', JSON.stringify(preferences));
+            } catch (e) {
+                console.warn('Could not save preferences to localStorage:', e);
+            }
+        };
+
+        const loadPreferences = () => {
+            try {
+                const saved = localStorage.getItem('menuPreferences');
+                if (saved) {
+                    const prefs = JSON.parse(saved);
+                    Object.keys(prefs).forEach(key => {
+                        const element = document.getElementById(key);
+                        if (element) element.checked = prefs[key];
+                    });
+                    updateToggleStates();
+                }
+            } catch (e) {
+                console.warn('Could not load preferences from localStorage:', e);
+            }
+        };
+
+        const getPreferences = () => {
+            return {
+                vegetarian: document.getElementById('vegetarian').checked,
+                vegan: document.getElementById('vegan').checked,
+                exclude_beef: document.getElementById('exclude-beef').checked,
+                exclude_pork: document.getElementById('exclude-pork').checked,
+                prioritize_protein: document.getElementById('prioritize-protein').checked
+            };
+        };
+
+        // Main application logic
         document.addEventListener('DOMContentLoaded', function () {
             const analyzeBtn = document.getElementById('analyze-btn');
             const resultsContainer = document.getElementById('results-container');
@@ -147,6 +235,9 @@
             const veganToggle = document.getElementById('vegan');
             const beefPref = document.getElementById('beef-pref');
             const porkPref = document.getElementById('pork-pref');
+
+            // Load saved preferences
+            loadPreferences();
 
             // Logic to disable beef/pork toggles if vegetarian or vegan is selected
             function updateToggleStates() {
@@ -178,25 +269,26 @@
                     document.getElementById('exclude-beef').checked = false;
                     document.getElementById('exclude-pork').checked = false;
                 }
+
+                // Save preferences when they change
+                savePreferences(getPreferences());
             }
 
             vegetarianToggle.addEventListener('change', updateToggleStates);
             veganToggle.addEventListener('change', updateToggleStates);
             
-            analyzeBtn.addEventListener('click', async () => {
-                resultsContainer.innerHTML = `
-                    <div class="flex flex-col items-center justify-center p-6 bg-white rounded-lg shadow-md">
-                        <div id="loader"></div>
-                        <p class="mt-4 text-gray-600 font-medium">Analyzing the menu, please wait...</p>
-                    </div>`;
-
-                const preferences = {
-                    vegetarian: document.getElementById('vegetarian').checked,
-                    vegan: document.getElementById('vegan').checked,
-                    exclude_beef: document.getElementById('exclude-beef').checked,
-                    exclude_pork: document.getElementById('exclude-pork').checked,
-                    prioritize_protein: document.getElementById('prioritize-protein').checked
-                };
+            // Debounced analysis function
+            const debouncedAnalyze = debounce(async () => {
+                const preferences = getPreferences();
+                
+                showLoadingState("Analyzing menu...", true);
+                
+                // Simulate progress updates
+                let progressStep = 0;
+                const progressInterval = setInterval(() => {
+                    progressStep += 1;
+                    showProgress(progressStep, 10);
+                }, 1000);
 
                 try {
                     // Auto-detect if running locally or on Railway
@@ -211,6 +303,8 @@
                         body: JSON.stringify(preferences)
                     });
 
+                    clearInterval(progressInterval);
+
                     if (!response.ok) {
                         const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response from server.' }));
                         throw new Error(errorData.error || `Server responded with status: ${response.status}`);
@@ -220,15 +314,33 @@
                     displayResults(data);
 
                 } catch (error) {
+                    clearInterval(progressInterval);
                     console.error('Error fetching recommendations:', error);
+                    
+                    let errorMessage = "Could not connect to the backend server.";
+                    let suggestion = "Please try again later.";
+                    
+                    if (error.message.includes('429')) {
+                        errorMessage = "Too many requests. Please wait a moment before trying again.";
+                        suggestion = "Rate limit exceeded. Please wait 1 minute before retrying.";
+                    } else if (error.message.includes('500')) {
+                        errorMessage = "Server error occurred.";
+                        suggestion = "Please try again in a few moments.";
+                    } else if (error.message.includes('400')) {
+                        errorMessage = "Invalid request data.";
+                        suggestion = "Please refresh the page and try again.";
+                    }
+                    
                     resultsContainer.innerHTML = `
-                        <div class="bg-red-100 border-l-4 border-red-500 text-red-800 p-4 rounded-lg shadow-sm" role="alert">
+                        <div class="bg-red-100 border-l-4 border-red-500 text-red-800 p-4 rounded-lg shadow-sm fade-in" role="alert">
                             <p class="font-bold">Connection Error</p>
-                            <p>Could not connect to the backend server. Please ensure the local Python server is running.</p>
-                            <p class="mt-2 text-sm">In your terminal, run: <code>flask --app main run --port 5001</code></p>
+                            <p>${errorMessage}</p>
+                            <p class="mt-2 text-sm">${suggestion}</p>
                         </div>`;
                 }
-            });
+            }, 500);
+
+            analyzeBtn.addEventListener('click', debouncedAnalyze);
 
             function displayResults(data) {
                 resultsContainer.innerHTML = ''; // Clear previous results or loader
@@ -236,7 +348,7 @@
 
                 if (Object.values(data).every(meal => !meal || meal.length === 0)) {
                     resultsContainer.innerHTML = `
-                        <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-4 rounded-lg shadow-sm" role="alert">
+                        <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-4 rounded-lg shadow-sm fade-in" role="alert">
                             <p class="font-bold">No Recommendations Found</p>
                             <p>No menu items matching your preferences could be found for today. Please try again later or adjust your filters.</p>
                         </div>`;
@@ -246,7 +358,7 @@
                 meals.forEach(mealName => {
                     const items = data[mealName];
                     const mealEl = document.createElement('div');
-                    mealEl.className = 'bg-white rounded-lg shadow-md p-6';
+                    mealEl.className = 'bg-white rounded-lg shadow-md p-6 fade-in';
                     
                     let itemsHtml = '<p class="text-gray-500">No items found for this meal.</p>';
                     if (items && items.length > 0) {
@@ -282,6 +394,21 @@
                         <div class="space-y-2">${itemsHtml}</div>
                     `;
                     resultsContainer.appendChild(mealEl);
+                });
+            }
+
+            // Add keyboard shortcuts
+            document.addEventListener('keydown', (e) => {
+                if (e.ctrlKey && e.key === 'Enter') {
+                    e.preventDefault();
+                    debouncedAnalyze();
+                }
+            });
+
+            // Add service worker for offline functionality (optional)
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/sw.js').catch(err => {
+                    console.log('Service worker registration failed:', err);
                 });
             }
         });

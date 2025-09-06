@@ -3,5 +3,3 @@ Flask-Cors
 requests
 beautifulsoup4
 gunicorn
-pydantic
-flask-limiter

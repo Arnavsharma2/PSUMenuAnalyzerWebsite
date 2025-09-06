@@ -1,169 +1,18 @@
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 import requests
 from bs4 import BeautifulSoup
 import json
 import re
 from typing import List, Dict, Tuple, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
 import time
-import sqlite3
-import hashlib
-import logging
-from functools import lru_cache, wraps
-from contextlib import contextmanager
-from dataclasses import dataclass
-from pydantic import BaseModel, validator
-
-# --- Configuration ---
-@dataclass
-class Config:
-    GEMINI_API_KEY: str = os.getenv('GEMINI_API_KEY', '')
-    DEBUG: bool = os.getenv('DEBUG', 'False').lower() == 'true'
-    CACHE_TTL: int = int(os.getenv('CACHE_TTL', '3600'))
-    MAX_RETRIES: int = int(os.getenv('MAX_RETRIES', '3'))
-    REQUEST_TIMEOUT: int = int(os.getenv('REQUEST_TIMEOUT', '30'))
-
-config = Config()
-
-# --- Logging Setup ---
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from urllib.parse import urljoin
 
 # --- Flask App Initialization ---
 app = Flask(__name__)
 CORS(app)
-
-# --- Rate Limiting ---
-limiter = Limiter(
-    key_func=get_remote_address,
-    app=app,
-    default_limits=["200 per day", "50 per hour"]
-)
-
-# --- Database Setup ---
-@contextmanager
-def get_db_connection():
-    conn = sqlite3.connect('menu_cache.db')
-    try:
-        yield conn
-    finally:
-        conn.close()
-
-def init_db():
-    with get_db_connection() as conn:
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS menu_cache (
-                preferences_hash TEXT PRIMARY KEY,
-                result TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS form_cache (
-                id INTEGER PRIMARY KEY,
-                data TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
-# Initialize database on startup
-init_db()
-
-# --- Input Validation ---
-class MenuPreferences(BaseModel):
-    vegetarian: bool = False
-    vegan: bool = False
-    exclude_beef: bool = False
-    exclude_pork: bool = False
-    prioritize_protein: bool = False
-    
-    @validator('vegan')
-    def vegan_excludes_vegetarian(cls, v, values):
-        if v and values.get('vegetarian'):
-            raise ValueError('Cannot be both vegan and vegetarian')
-        return v
-
-# --- Utility Functions ---
-def retry_on_failure(max_retries=3, delay=1):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            for attempt in range(max_retries):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    if attempt == max_retries - 1:
-                        logger.error(f"Function {func.__name__} failed after {max_retries} attempts: {e}")
-                        raise e
-                    logger.warning(f"Attempt {attempt + 1} failed for {func.__name__}: {e}")
-                    time.sleep(delay * (2 ** attempt))  # Exponential backoff
-            return None
-        return wrapper
-    return decorator
-
-def log_analysis_request(preferences, duration, success):
-    logger.info(json.dumps({
-        'event': 'menu_analysis',
-        'preferences': preferences,
-        'duration_ms': duration * 1000,
-        'success': success,
-        'timestamp': datetime.now().isoformat()
-    }))
-
-def get_cached_menu_analysis(preferences_hash):
-    """Check if we have recent analysis for these preferences"""
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.execute(
-                'SELECT result FROM menu_cache WHERE preferences_hash = ? AND created_at > datetime("now", "-1 hour")',
-                (preferences_hash,)
-            )
-            result = cursor.fetchone()
-            return json.loads(result[0]) if result else None
-    except Exception as e:
-        logger.error(f"Error getting cached analysis: {e}")
-        return None
-
-def cache_menu_analysis(preferences_hash, result):
-    """Cache menu analysis result"""
-    try:
-        with get_db_connection() as conn:
-            conn.execute(
-                'INSERT OR REPLACE INTO menu_cache (preferences_hash, result) VALUES (?, ?)',
-                (preferences_hash, json.dumps(result))
-            )
-    except Exception as e:
-        logger.error(f"Error caching analysis: {e}")
-
-@lru_cache(maxsize=1)
-def get_cached_form_data():
-    """Cache form data for 1 hour to reduce API calls"""
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.execute(
-                'SELECT data FROM form_cache WHERE created_at > datetime("now", "-1 hour") ORDER BY created_at DESC LIMIT 1'
-            )
-            result = cursor.fetchone()
-            if result:
-                return json.loads(result[0])
-    except Exception as e:
-        logger.error(f"Error getting cached form data: {e}")
-    return None
-
-def cache_form_data(data):
-    """Cache form data"""
-    try:
-        with get_db_connection() as conn:
-            conn.execute(
-                'INSERT INTO form_cache (data) VALUES (?)',
-                (json.dumps(data),)
-            )
-    except Exception as e:
-        logger.error(f"Error caching form data: {e}")
 
 # --- Menu Analyzer Class ---
 class MenuAnalyzer:
@@ -182,28 +31,21 @@ class MenuAnalyzer:
         self.prioritize_protein = prioritize_protein
         
         # Use the passed parameter or fall back to environment variable
-        self.gemini_api_key = gemini_api_key or config.GEMINI_API_KEY
+        self.gemini_api_key = gemini_api_key or os.getenv('GEMINI_API_KEY')
         if self.gemini_api_key:
             self.gemini_url = (
                 f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
                 f"?key={self.gemini_api_key}"
             )
         elif self.debug:
-            logger.info("No Gemini API key provided. Using local analysis only.")
+            print("No Gemini API key provided. Using local analysis only.")
         
         if self.prioritize_protein and self.debug:
-            logger.info("INFO: Analysis is set to prioritize protein content.")
+            print("INFO: Analysis is set to prioritize protein content.")
 
-    @retry_on_failure(max_retries=config.MAX_RETRIES)
     def get_initial_form_data(self) -> Optional[Dict[str, Dict[str, str]]]:
-        # Check cache first
-        cached_data = get_cached_form_data()
-        if cached_data:
-            logger.info("Using cached form data")
-            return cached_data
-
         try:
-            response = self.session.get(self.base_url, timeout=config.REQUEST_TIMEOUT)
+            response = self.session.get(self.base_url, timeout=30)
             response.raise_for_status()
             soup = BeautifulSoup(response.content, 'html.parser')
             
@@ -216,12 +58,9 @@ class MenuAnalyzer:
                         text = option.get_text(strip=True)
                         if value and text:
                             options[name][text.lower()] = value
-            
-            # Cache the result
-            cache_form_data(options)
             return options
         except requests.RequestException as e:
-            logger.error(f"Error fetching initial page: {e}")
+            if self.debug: print(f"Error fetching initial page: {e}")
             return None
 
     def looks_like_food_item(self, text: str) -> bool:
@@ -248,20 +87,16 @@ class MenuAnalyzer:
         return items
 
     def run_analysis(self) -> Dict[str, List[Tuple[str, int, str, str]]]:
-        start_time = time.time()
-        
-        if self.debug: 
-            logger.info("Fetching initial form options...")
-        
+        if self.debug: print("Fetching initial form options...")
         form_options = self.get_initial_form_data()
         if not form_options:
-            logger.warning("Could not fetch form data. Using fallback.")
+            print("Could not fetch form data. Using fallback.")
             return self.get_fallback_data()
 
         campus_options = form_options.get('campus', {})
         altoona_value = next((val for name, val in campus_options.items() if 'altoona' in name), None)
         if not altoona_value:
-            logger.warning("Could not find Altoona campus value. Using fallback.")
+            print("Could not find Altoona campus value. Using fallback.")
             return self.get_fallback_data()
 
         date_options = form_options.get('date', {})
@@ -271,43 +106,38 @@ class MenuAnalyzer:
             if date_options:
                 first_available_date = list(date_options.keys())[0]
                 date_value = list(date_options.values())[0]
-                logger.warning(f"Today's menu ('{today_str_key}') not found. Using first available date: {first_available_date}")
+                print(f"Warning: Today's menu ('{today_str_key}') not found. Using first available date: {first_available_date}")
             else:
-                logger.warning("No dates found. Using fallback.")
+                print("No dates found. Using fallback.")
                 return self.get_fallback_data()
 
         daily_menu = {}
         meal_options = form_options.get('meal', {})
         
-        # Sequential fetching (simplified for reliability)
         for meal_name in ["Breakfast", "Lunch", "Dinner"]:
             meal_key = meal_name.lower()
             meal_value = meal_options.get(meal_key)
             
             if not meal_value:
-                if self.debug: 
-                    logger.warning(f"Could not find form value for '{meal_name}'. Skipping.")
+                if self.debug: print(f"Could not find form value for '{meal_name}'. Skipping.")
                 continue
 
             try:
                 form_data = {'selCampus': altoona_value, 'selMeal': meal_value, 'selMenuDate': date_value}
-                if self.debug: 
-                    logger.info(f"Fetching menu for {meal_name} with data: {form_data}")
-                response = self.session.post(self.base_url, data=form_data, timeout=config.REQUEST_TIMEOUT)
+                if self.debug: print(f"Fetching menu for {meal_name} with data: {form_data}")
+                response = self.session.post(self.base_url, data=form_data, timeout=30)
                 response.raise_for_status()
                 meal_soup = BeautifulSoup(response.content, 'html.parser')
                 items = self.extract_items_from_meal_page(meal_soup)
                 if items:
                     daily_menu[meal_name] = items
-                    if self.debug: 
-                        logger.info(f"Found {len(items)} items for {meal_name}.")
+                    if self.debug: print(f"Found {len(items)} items for {meal_name}.")
                 time.sleep(0.5)
             except requests.RequestException as e:
-                if self.debug: 
-                    logger.error(f"Error fetching {meal_name} menu: {e}")
+                if self.debug: print(f"Error fetching {meal_name} menu: {e}")
 
         if not daily_menu:
-            logger.warning("Failed to scrape any menu items from the website. Using fallback.")
+            print("Failed to scrape any menu items from the website. Using fallback.")
             return self.get_fallback_data()
         
         analyzed_results = self.analyze_menu_with_gemini(daily_menu) if self.gemini_api_key else self.analyze_menu_local(daily_menu)
@@ -318,15 +148,6 @@ class MenuAnalyzer:
             filtered_items = self.apply_hard_filters(items)
             # Then, slice the list to get only the top 5 items
             final_results[meal] = filtered_items[:5]
-        
-        duration = time.time() - start_time
-        log_analysis_request({
-            'vegetarian': self.vegetarian,
-            'vegan': self.vegan,
-            'exclude_beef': self.exclude_beef,
-            'exclude_pork': self.exclude_pork,
-            'prioritize_protein': self.prioritize_protein
-        }, duration, True)
         
         return final_results
 
@@ -368,8 +189,7 @@ class MenuAnalyzer:
                 results[meal] = meal_results
             return results
         except Exception as e:
-            if self.debug: 
-                logger.error(f"Gemini analysis failed: {e}. Falling back to local analysis.")
+            if self.debug: print(f"Gemini analysis failed: {e}. Falling back to local analysis.")
             return self.analyze_menu_local(daily_menu)
 
     def apply_hard_filters(self, food_items: List[Tuple[str, int, str, str]]) -> List[Tuple[str, int, str, str]]:
@@ -447,59 +267,46 @@ def health_check():
     })
 
 @app.route('/api/analyze', methods=['POST'])
-@limiter.limit("10 per minute")
 def analyze():
-    start_time = time.time()
     try:
         data = request.json
-        logger.info(f"Received request with data: {data}")
+        print(f"Received request with data: {data}")
         
-        # Validate input
-        try:
-            preferences = MenuPreferences(**data)
-        except Exception as e:
-            logger.error(f"Invalid input data: {e}")
-            return jsonify({"error": "Invalid input data"}), 400
+        # Simple validation
+        vegetarian = data.get('vegetarian', False)
+        vegan = data.get('vegan', False)
+        exclude_beef = data.get('exclude_beef', False)
+        exclude_pork = data.get('exclude_pork', False)
+        prioritize_protein = data.get('prioritize_protein', False)
         
-        # Create preferences hash for caching
-        preferences_dict = preferences.dict()
-        preferences_hash = hashlib.md5(json.dumps(preferences_dict, sort_keys=True).encode()).hexdigest()
+        # Validate that vegan and vegetarian aren't both selected
+        if vegan and vegetarian:
+            return jsonify({"error": "Cannot be both vegan and vegetarian"}), 400
         
-        # Check cache first
-        cached_result = get_cached_menu_analysis(preferences_hash)
-        if cached_result:
-            logger.info("Returning cached result")
-            return jsonify(cached_result)
-        
-        # NOTE: The GEMINI_API_KEY is retrieved from environment variables for security
-        api_key = config.GEMINI_API_KEY
+        # Get API key from environment
+        api_key = os.getenv('GEMINI_API_KEY')
 
         analyzer = MenuAnalyzer(
             gemini_api_key=api_key,
-            exclude_beef=preferences.exclude_beef,
-            exclude_pork=preferences.exclude_pork,
-            vegetarian=preferences.vegetarian,
-            vegan=preferences.vegan,
-            prioritize_protein=preferences.prioritize_protein,
-            debug=config.DEBUG
+            exclude_beef=exclude_beef,
+            exclude_pork=exclude_pork,
+            vegetarian=vegetarian,
+            vegan=vegan,
+            prioritize_protein=prioritize_protein,
+            debug=True
         )
         
         recommendations = analyzer.run_analysis()
-        
-        # Cache the result
-        cache_menu_analysis(preferences_hash, recommendations)
-        
-        duration = time.time() - start_time
-        log_analysis_request(preferences_dict, duration, True)
+        print(f"Returning recommendations: {recommendations}")
         
         return jsonify(recommendations)
     except Exception as e:
-        duration = time.time() - start_time
-        logger.error(f"[SERVER ERROR] {e}")
-        log_analysis_request({}, duration, False)
+        print(f"[SERVER ERROR] {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": "An internal server error occurred."}), 500
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5001))
-    app.run(host='0.0.0.0', port=port, debug=config.DEBUG)
+    app.run(host='0.0.0.0', port=port, debug=True)
 

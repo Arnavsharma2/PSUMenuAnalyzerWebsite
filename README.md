@@ -1,86 +1,149 @@
-Penn State Campus Dining Analyzer
-This web application provides personalized dining recommendations for Penn State campus dining locations. It scrapes the live daily menu from the official PSU dining website, analyzes food items based on nutritional data and user preferences, and provides a ranked list of suggestions with health scores.
+# Penn State Campus Dining Analyzer
+# PSU-Menu-Analyzer
 
-Core Functionality
-Live Menu Scraping: Fetches data directly from liveon.psu.edu for the most up-to-date menus.
+Penn State Altoona Menu Analyzer Web App
+This web application provides personalized dining recommendations for the Penn State Altoona campus cafeteria, Port Sky Cafe. It scrapes the daily menu, analyzes food items based on user preferences (vegetarian, dietary exclusions, protein priority), and provides a ranked list of suggestions.
 
-Campus Selection: Supports major Penn State campus dining locations.
 
-Dietary Preferences: Filters for vegetarian, vegan, and high-protein diets, plus exclusions for beef and pork.
+### Core Functionality
+- **Campus Selection**: Support for all Penn State campus dining locations
+- **Dietary Preferences**: Vegetarian, vegan, and protein-prioritized options
+- **Health Scoring**: 0-100 health scores based on nutritional content and preparation methods
+- **Real-time Analysis**: Live menu scraping and analysis
 
-Nutritional Health Scoring: Ranks food on a 0-100 scale based on scraped nutritional data (protein density, preparation method).
+### Enhanced Nutritional Analysis (NEW!)
+- **Detailed Nutritional Data Extraction**: Automatically extracts calories, protein, fat, fiber, sodium, and other nutrients from PSU nutrition pages
+- **CSV Export**: Download comprehensive nutritional data for all analyzed foods
+- **Nutritional Insights**: View aggregated nutritional statistics and top-performing foods
+- **Enhanced Scoring**: More accurate health scores based on actual nutritional data rather than just keywords
 
-Nutritional Analysis: Fetches detailed nutritional data for each menu item where available.
+### Technical Features
+- **AI-Powered Analysis**: Uses Google Gemini AI for intelligent food recommendations
+- **Fallback System**: Local analysis when AI is unavailable
+- **Responsive Design**: Works on desktop and mobile devices
+- **Data Persistence**: Saves user preferences locally
 
-Data Export: Download the complete nutritional data for a location as a CSV file.
+## Installation
 
-How It Works
-The application consists of a Python Flask backend and a vanilla JavaScript frontend.
-
-The user selects a campus and their dietary preferences on the webpage.
-
-The browser sends this request to the Flask backend API.
-
-The backend scrapes the appropriate menu page from the Penn State dining website.
-
-For each food item, it follows the link to the nutrition page and scrapes detailed data (calories, protein, fat, etc.).
-
-It applies the user's dietary filters.
-
-A health score is calculated for each remaining item based on its nutritional profile.
-
-The final, sorted recommendations are sent back to the frontend to be displayed.
-
-Getting Started (Local Development)
-Clone the repository:
-
-git clone <your-repo-url>
+1. Clone the repository:
+```bash
+git clone https://github.com/Arnavsharma2/PSUMenuAnalyzerWebsite.git
 cd PSUMenuAnalyzerWebsite
+```
 
-Install dependencies:
-It's recommended to use a virtual environment.
-
-python -m venv venv
-source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
+2. Install dependencies:
+```bash
 pip install -r requirements.txt
+```
 
-Run the application:
+3. Set up environment variables:
+```bash
+export GEMINI_API_KEY="your_gemini_api_key_here"
+```
 
+4. Run the application:
+```bash
 python main.py
+```
 
-Open your browser and navigate to http://127.0.0.1:5001.
+5. Open your browser and navigate to `http://localhost:5001`
 
-Deployment
-This application is configured for deployment on services like Heroku, Render, or any platform that supports Python web apps via a Dockerfile.
+## New Nutritional Analysis Features
 
-Key Deployment Steps:
+### Nutritional Data Extraction
+- Automatically follows nutrition links from menu items
+- Extracts detailed nutritional information including:
+  - Calories
+  - Protein content
+  - Fat (total and saturated)
+  - Carbohydrates
+  - Fiber
+  - Sugar
+  - Sodium
+  - Cholesterol
 
-Push the code to your hosting provider (e.g., via Git).
+### CSV Export
+- Download nutritional data for any campus
+- Includes all nutritional metrics for each food item
+- Organized by meal and date
+- Perfect for further analysis or tracking
 
-The platform will use the Dockerfile to build a container image.
+### Enhanced Health Scoring
+The new system provides more accurate health scores by considering:
+- **Protein Density**: Protein content per calorie
+- **Fat Quality**: Total fat vs saturated fat ratios
+- **Fiber Content**: Higher fiber foods score better
+- **Sodium Levels**: Lower sodium foods are preferred
+- **Sugar Content**: Lower sugar foods score higher
 
-The gunicorn web server specified in the Dockerfile will start the application.
+### Nutritional Insights Dashboard
+- View aggregated nutritional statistics
+- Identify highest protein foods
+- Find lowest calorie options
+- Discover high fiber choices
+- Track low sodium alternatives
 
-The server is configured to run on the port provided by the environment variable $PORT, which is standard for most hosting platforms.
+## API Endpoints
 
-There are no API keys or environment variables required for this refactored version to run.
+### Core Endpoints
+- `POST /api/analyze` - Analyze menu with user preferences
+- `GET /health` - Health check endpoint
 
-API Endpoints
-POST /api/analyze: The main endpoint. Takes a JSON body with user preferences and returns scored meal recommendations.
+### New Nutritional Endpoints
+- `GET /api/nutrition-insights/<campus>` - Get nutritional insights for a campus
+- `GET /api/download-nutrition/<campus>` - Download nutrition CSV for a campus
 
-GET /api/nutrition-insights/<campus_key>: Provides high-level stats (average calories, top protein foods) for a given campus menu.
+## Configuration
 
-GET /api/download-nutrition/<campus_key>: Triggers a download of a CSV file containing all scraped nutritional data for the selected campus menu.
+### Environment Variables
+- `GEMINI_API_KEY`: Your Google Gemini API key (optional, enables AI analysis)
+- `PORT`: Server port (default: 5001)
 
-Project Refactor Summary
-This project was significantly refactored to address several core issues:
+### Nutritional Analysis Settings
+- Enable/disable nutritional data extraction via the web interface
+- Nutritional data is saved to `exports/` directory
+- CSV files are named: `{campus}_{meal}_{date}_nutrition.csv`
 
-Corrected Web Scraper: The scraper was rewritten to target the current Penn State dining website (liveon.psu.edu), fixing the primary bug that prevented any data from being loaded.
+## Usage
 
-Integrated Nutritional Analysis: The health scoring system now uses real, scraped nutritional data instead of relying on keywords, making the recommendations far more accurate.
+1. **Select Campus**: Choose your Penn State dining location
+2. **Set Preferences**: Configure dietary restrictions and priorities
+3. **Enable Nutritional Analysis**: Toggle nutritional data extraction (recommended)
+4. **Analyze Menu**: Click "Analyze Today's Menu" to get recommendations
+5. **View Insights**: Check nutritional insights and download CSV data
+6. **Review Results**: See detailed health scores and nutritional information
 
-Frontend/Backend Synchronization: The campus selection dropdown in the frontend now matches what the backend expects, ensuring requests are processed correctly.
+## Data Storage
 
-Simplified Dependencies: The dependency on the Gemini AI API was removed, as the new scraping method is precise enough to not require AI-based filtering. This also removes the need for an API key, simplifying deployment.
+### Nutritional Data
+- Stored in CSV format in `exports/` directory
+- Organized by campus, meal, and date
+- Includes comprehensive nutritional metrics
+- Can be imported into spreadsheet applications
 
-Implemented Missing Features: The "Nutritional Insights" and "Download CSV" features described in the original README have now been fully implemented.
+### User Preferences
+- Saved in browser localStorage
+- Automatically restored on page reload
+- Includes all dietary preferences and campus selection
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Disclaimer
+
+This is an independent project and is not affiliated with Penn State University. The nutritional data is extracted from publicly available Penn State dining information and should be used for informational purposes only.
+
+## Contact
+
+- Email: arnav.sharma2264@gmail.com
+- LinkedIn: [Arnav Sharma](https://linkedin.com/in/arnav-sharma-b2014824b/)
+- GitHub: [Arnavsharma2](https://github.com/Arnavsharma2)

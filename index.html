@@ -160,73 +160,6 @@
     </div>
 
     <script>
-        // Utility functions
-        const debounce = (func, delay) => {
-            let timeoutId;
-            return (...args) => {
-                clearTimeout(timeoutId);
-                timeoutId = setTimeout(() => func.apply(this, args), delay);
-            };
-        };
-
-        const showLoadingState = (message = "Analyzing menu...", showProgress = false) => {
-            const progressHtml = showProgress ? `
-                <div class="progress-bar mt-4">
-                    <div class="progress-fill" style="width: 0%"></div>
-                </div>
-                <p class="mt-2 text-sm text-gray-500">This may take 10-15 seconds...</p>
-            ` : '';
-            
-            resultsContainer.innerHTML = `
-                <div class="flex flex-col items-center justify-center p-6 bg-white rounded-lg shadow-md fade-in">
-                    <div id="loader"></div>
-                    <p class="mt-4 text-gray-600 font-medium">${message}</p>
-                    ${progressHtml}
-                </div>`;
-        };
-
-        const showProgress = (step, total) => {
-            const progressFill = document.querySelector('.progress-fill');
-            if (progressFill) {
-                const progress = (step / total) * 100;
-                progressFill.style.width = `${progress}%`;
-            }
-        };
-
-        const savePreferences = (preferences) => {
-            try {
-                localStorage.setItem('menuPreferences', JSON.stringify(preferences));
-            } catch (e) {
-                console.warn('Could not save preferences to localStorage:', e);
-            }
-        };
-
-        const loadPreferences = () => {
-            try {
-                const saved = localStorage.getItem('menuPreferences');
-                if (saved) {
-                    const prefs = JSON.parse(saved);
-                    Object.keys(prefs).forEach(key => {
-                        const element = document.getElementById(key);
-                        if (element) element.checked = prefs[key];
-                    });
-                    updateToggleStates();
-                }
-            } catch (e) {
-                console.warn('Could not load preferences from localStorage:', e);
-            }
-        };
-
-        const getPreferences = () => {
-            return {
-                vegetarian: document.getElementById('vegetarian').checked,
-                vegan: document.getElementById('vegan').checked,
-                exclude_beef: document.getElementById('exclude-beef').checked,
-                exclude_pork: document.getElementById('exclude-pork').checked,
-                prioritize_protein: document.getElementById('prioritize-protein').checked
-            };
-        };
-
         // Main application logic
         document.addEventListener('DOMContentLoaded', function () {
             const analyzeBtn = document.getElementById('analyze-btn');
@@ -235,6 +168,73 @@
             const veganToggle = document.getElementById('vegan');
             const beefPref = document.getElementById('beef-pref');
             const porkPref = document.getElementById('pork-pref');
+
+            // Utility functions
+            const debounce = (func, delay) => {
+                let timeoutId;
+                return (...args) => {
+                    clearTimeout(timeoutId);
+                    timeoutId = setTimeout(() => func.apply(this, args), delay);
+                };
+            };
+
+            const showLoadingState = (message = "Analyzing menu...", showProgress = false) => {
+                const progressHtml = showProgress ? `
+                    <div class="progress-bar mt-4">
+                        <div class="progress-fill" style="width: 0%"></div>
+                    </div>
+                    <p class="mt-2 text-sm text-gray-500">This may take 10-15 seconds...</p>
+                ` : '';
+                
+                resultsContainer.innerHTML = `
+                    <div class="flex flex-col items-center justify-center p-6 bg-white rounded-lg shadow-md fade-in">
+                        <div id="loader"></div>
+                        <p class="mt-4 text-gray-600 font-medium">${message}</p>
+                        ${progressHtml}
+                    </div>`;
+            };
+
+            const showProgress = (step, total) => {
+                const progressFill = document.querySelector('.progress-fill');
+                if (progressFill) {
+                    const progress = (step / total) * 100;
+                    progressFill.style.width = `${progress}%`;
+                }
+            };
+
+            const savePreferences = (preferences) => {
+                try {
+                    localStorage.setItem('menuPreferences', JSON.stringify(preferences));
+                } catch (e) {
+                    console.warn('Could not save preferences to localStorage:', e);
+                }
+            };
+
+            const loadPreferences = () => {
+                try {
+                    const saved = localStorage.getItem('menuPreferences');
+                    if (saved) {
+                        const prefs = JSON.parse(saved);
+                        Object.keys(prefs).forEach(key => {
+                            const element = document.getElementById(key);
+                            if (element) element.checked = prefs[key];
+                        });
+                        updateToggleStates();
+                    }
+                } catch (e) {
+                    console.warn('Could not load preferences from localStorage:', e);
+                }
+            };
+
+            const getPreferences = () => {
+                return {
+                    vegetarian: document.getElementById('vegetarian').checked,
+                    vegan: document.getElementById('vegan').checked,
+                    exclude_beef: document.getElementById('exclude-beef').checked,
+                    exclude_pork: document.getElementById('exclude-pork').checked,
+                    prioritize_protein: document.getElementById('prioritize-protein').checked
+                };
+            };
 
             // Load saved preferences
             loadPreferences();

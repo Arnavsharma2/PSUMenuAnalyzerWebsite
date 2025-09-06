@@ -175,7 +175,7 @@ class NutritionalDataExtractor:
             score -= 5
             reasons.append("Moderate sodium")
         
-        score = max(0, min(100, score))
+        score = max(0, min(100, round(score)))
         return score, "; ".join(reasons) if reasons else "Standard nutritional profile"
 
 # --- CSV Export Manager ---
@@ -405,8 +405,14 @@ class MenuAnalyzer:
                 if self.debug:
                     print(f"Gemini response did not contain valid JSON. Falling back. Response: {text_response}")
                 return self.extract_items_from_meal_page(soup)
+            
+            try:
+                parsed_json = json.loads(json_str_match.group(0))
+            except json.JSONDecodeError:
+                if self.debug:
+                    print(f"Failed to decode JSON from Gemini response. Falling back.")
+                return self.extract_items_from_meal_page(soup)
 
-            parsed_json = json.loads(json_str_match.group(0))
             food_names_from_gemini = parsed_json.get("foods", [])
 
             if not food_names_from_gemini:
@@ -580,7 +586,7 @@ class MenuAnalyzer:
                         print(f"Error fetching {meal_name} menu: {e}")
                     daily_menu[meal_name] = {}
 
-            if not daily_menu:
+            if not any(daily_menu.values()):
                 print("Failed to scrape any menu items from the website. Using fallback.")
                 return self.get_fallback_data()
             
@@ -637,7 +643,8 @@ class MenuAnalyzer:
                 for item_info in analyzed_items:
                     food_name = item_info.get("food_name")
                     url = daily_menu.get(meal, {}).get(food_name, '#')
-                    meal_results.append((food_name, item_info.get("score"), item_info.get("reasoning"), url))
+                    score = int(item_info.get("score", 50)) # Ensure score is an integer
+                    meal_results.append((food_name, score, item_info.get("reasoning"), url))
                 meal_results.sort(key=lambda x: x[1], reverse=True)
                 results[meal] = meal_results
             return results
@@ -692,14 +699,14 @@ class MenuAnalyzer:
     def analyze_food_health_local_list(self, food_items: Dict[str, str], meal: str = "") -> List[Tuple[str, int, str, str]]:
         health_scores = []
         protein_keywords = {'excellent': ['chicken', 'salmon', 'tuna', 'turkey'], 'good': ['beef', 'eggs', 'tofu', 'beans'], 'moderate': ['cheese', 'yogurt']}
-        healthy_ prep = {'excellent': ['grilled', 'baked', 'steamed'], 'good': ['sautéed'], 'poor': ['fried', 'creamy', 'battered']}
+        healthy_prep = {'excellent': ['grilled', 'baked', 'steamed'], 'good': ['sautéed'], 'poor': ['fried', 'creamy', 'battered']}
 
         protein_weights = {'excellent': 40, 'good': 30, 'moderate': 15} if self.prioritize_protein else {'excellent': 30, 'good': 20, 'moderate': 10}
         prep_weights = {'excellent': 10, 'good': 5, 'poor': -15} if self.prioritize_protein else {'excellent': 20, 'good': 10, 'poor': -25}
 
         for item, url in food_items.items():
             item_lower = item.lower()
-            score, reasoning = 50, []
+            score, reasoning = 50.0, []
             
             nutrition_score = 0
             nutrition_reason = ""
@@ -729,7 +736,7 @@ class MenuAnalyzer:
                     reasoning.append(f"Prep style ({level})")
                     break
             
-            score = max(0, min(100, int(score)))
+            score = max(0, min(100, round(score)))
             health_scores.append((item, score, ", ".join(reasoning) or "Standard option", url))
         return health_scores
 
@@ -747,7 +754,7 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
-        'version': '2.0.0'
+        'version': '2.0.1' # Incremented version
     })
 
 @app.route('/api/analyze', methods=['POST'])
@@ -839,3 +846,4 @@ def download_nutrition_csv(campus):
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5001))
     app.run(host='0.0.0.0', port=port, debug=True)
+

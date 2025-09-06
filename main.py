@@ -31,8 +31,8 @@ class MenuAnalyzer:
         self.vegetarian = vegetarian
         self.prioritize_protein = prioritize_protein
         
-        gemini_api_key = os.getenv('GEMINI_API_KEY')
-        self.gemini_api_key = gemini_api_key
+        # Use the passed parameter or fall back to environment variable
+        self.gemini_api_key = gemini_api_key or os.getenv('GEMINI_API_KEY')
         if self.gemini_api_key:
             self.gemini_url = (
                 f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"

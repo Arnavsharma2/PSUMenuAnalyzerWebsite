@@ -11,6 +11,9 @@ import time
 from urllib.parse import urljoin
 import csv
 import pandas as pd
+import hashlib
+import pickle
+from pathlib import Path
 
 # --- Flask App Initialization ---
 app = Flask(__name__)
@@ -161,13 +164,17 @@ class NutritionalDataExtractor:
         # For now, return empty dict - we'll improve this later
         return {}
     
-    def calculate_nutrition_score(self, nutrition_data: Dict[str, float], food_name: str = "") -> Tuple[int, str]:
+    def calculate_nutrition_score(self, nutrition_data: Dict[str, float], food_name: str = "", prioritize_protein: bool = False) -> Tuple[int, str]:
         """Calculate a health score based on nutritional data"""
         if not nutrition_data:
             return 50, "No nutritional data available"
         
         # Check if this is a CYO (Create Your Own) item
         is_cyo = food_name and "cyo" in food_name.lower()
+        
+        # Check if this is a vegetarian protein source
+        is_vegetarian_protein = food_name and any(veg_protein in food_name.lower() for veg_protein in 
+            ['paneer', 'tofu', 'tempeh', 'quinoa', 'beans', 'lentils', 'chickpeas', 'black bean', 'veggie', 'vegetarian'])
         
         # Check if we have detailed nutritional data or just calories
         has_detailed_data = any(nutrition_data.get(key, 0) > 0 for key in ['protein', 'fat', 'carbs', 'fiber', 'sodium'])
@@ -195,29 +202,68 @@ class NutritionalDataExtractor:
                 score += 5
                 reasons.append("Protein content depends on customization")
         else:
-            # Regular items use standard protein scoring
+            # Regular items use protein scoring based on prioritize_protein setting
             protein = nutrition_data.get('protein', 0)
             if protein > 0:  # Only apply protein scoring if we have protein data
-                if protein >= 25:
-                    score += 20
-                    reasons.append("High protein")
-                elif protein >= 15:
-                    score += 10
-                    reasons.append("Moderate protein")
-                elif protein < 5:
-                    score -= 10
-                    reasons.append("Low protein")
+                if prioritize_protein:
+                    # Enhanced protein scoring when protein is prioritized
+                    if protein >= 25:
+                        score += 30  # Increased from 20
+                        reasons.append("High protein (prioritized)")
+                    elif protein >= 15:
+                        score += 20  # Increased from 10
+                        reasons.append("Moderate protein (prioritized)")
+                    elif protein >= 10:
+                        score += 10  # New tier for moderate protein
+                        reasons.append("Good protein (prioritized)")
+                    elif protein < 5:
+                        score -= 15  # Increased penalty
+                        reasons.append("Low protein (prioritized)")
+                else:
+                    # Standard protein scoring
+                    if protein >= 25:
+                        score += 20
+                        reasons.append("High protein")
+                    elif protein >= 15:
+                        score += 10
+                        reasons.append("Moderate protein")
+                    elif protein < 5:
+                        score -= 10
+                        reasons.append("Low protein")
+        
+        # Special bonus for vegetarian protein sources
+        if is_vegetarian_protein:
+            score += 20  # Increased bonus for vegetarian proteins
+            reasons.append("Vegetarian protein source")
+            
+            # Extra bonus for paneer specifically (traditional vegetarian protein)
+            if 'paneer' in food_name.lower():
+                score += 10
+                reasons.append("Traditional paneer protein")
         
         # Calorie density scoring (only if we have both calories and protein data)
         calories = nutrition_data.get('calories', 0)
         if calories > 0 and protein > 0:
             protein_per_calorie = protein / calories if calories > 0 else 0
-            if protein_per_calorie >= 0.1:  # 10g protein per 100 calories
-                score += 15
-                reasons.append("Good protein density")
-            elif protein_per_calorie < 0.05 and not is_cyo:  # Less than 5g protein per 100 calories (only penalize non-CYO)
-                score -= 10
-                reasons.append("Low protein density")
+            if prioritize_protein:
+                # Enhanced protein density scoring when protein is prioritized
+                if protein_per_calorie >= 0.15:  # 15g protein per 100 calories
+                    score += 25  # Increased bonus
+                    reasons.append("Excellent protein density (prioritized)")
+                elif protein_per_calorie >= 0.1:  # 10g protein per 100 calories
+                    score += 20  # Increased bonus
+                    reasons.append("Good protein density (prioritized)")
+                elif protein_per_calorie < 0.05 and not is_cyo:  # Less than 5g protein per 100 calories
+                    score -= 20  # Increased penalty
+                    reasons.append("Low protein density (prioritized)")
+            else:
+                # Standard protein density scoring
+                if protein_per_calorie >= 0.1:  # 10g protein per 100 calories
+                    score += 15
+                    reasons.append("Good protein density")
+                elif protein_per_calorie < 0.05 and not is_cyo:  # Less than 5g protein per 100 calories (only penalize non-CYO)
+                    score -= 10
+                    reasons.append("Low protein density")
         
         # If we only have calories and no other nutritional data, use calorie-based scoring
         if not has_detailed_data and calories > 0:
@@ -231,25 +277,37 @@ class NutritionalDataExtractor:
                 score -= 10
                 reasons.append("High calorie option")
         
-        # Fat scoring (only if we have fat data)
+        # Fat scoring (only if we have fat data) - more lenient for vegetarian proteins
         fat = nutrition_data.get('fat', 0)
         if fat > 0:
             if 10 <= fat <= 25:
                 score += 5
                 reasons.append("Moderate fat content")
             elif fat > 40:
-                score -= 15
-                reasons.append("High fat content")
+                if is_vegetarian_protein:
+                    score -= 10  # Less penalty for vegetarian proteins
+                    reasons.append("High fat content (vegetarian protein)")
+                else:
+                    score -= 15
+                    reasons.append("High fat content")
         
-        # Saturated fat penalty (only if we have saturated fat data)
+        # Saturated fat penalty (only if we have saturated fat data) - more lenient for vegetarian proteins
         saturated_fat = nutrition_data.get('saturated_fat', 0)
         if saturated_fat > 0:
             if saturated_fat > 10:
-                score -= 15
-                reasons.append("High saturated fat")
+                if is_vegetarian_protein:
+                    score -= 10  # Less penalty for vegetarian proteins
+                    reasons.append("High saturated fat (vegetarian protein)")
+                else:
+                    score -= 15
+                    reasons.append("High saturated fat")
             elif saturated_fat > 5:
-                score -= 5
-                reasons.append("Moderate saturated fat")
+                if is_vegetarian_protein:
+                    score -= 3  # Less penalty for vegetarian proteins
+                    reasons.append("Moderate saturated fat (vegetarian protein)")
+                else:
+                    score -= 5
+                    reasons.append("Moderate saturated fat")
         
         # Fiber bonus (only if we have fiber data)
         fiber = nutrition_data.get('fiber', 0)
@@ -271,18 +329,129 @@ class NutritionalDataExtractor:
                 score -= 5
                 reasons.append("Moderate sugar")
         
-        # Sodium penalty (only if we have sodium data)
+        # Sodium penalty (only if we have sodium data) - more lenient for vegetarian proteins
         sodium = nutrition_data.get('sodium', 0)
         if sodium > 0:
             if sodium > 1000:
-                score -= 15
-                reasons.append("High sodium")
+                if is_vegetarian_protein:
+                    score -= 10  # Less penalty for vegetarian proteins
+                    reasons.append("High sodium (vegetarian protein)")
+                else:
+                    score -= 15
+                    reasons.append("High sodium")
             elif sodium > 600:
-                score -= 5
-                reasons.append("Moderate sodium")
+                if is_vegetarian_protein:
+                    score -= 3  # Less penalty for vegetarian proteins
+                    reasons.append("Moderate sodium (vegetarian protein)")
+                else:
+                    score -= 5
+                    reasons.append("Moderate sodium")
         
         score = max(0, min(100, score))
         return score, "; ".join(reasons) if reasons else "Standard nutritional profile"
+
+# --- Daily Cache Manager ---
+class DailyCacheManager:
+    def __init__(self, debug=False):
+        self.debug = debug
+        self.cache_dir = "cache"
+        self.nutrition_cache_dir = os.path.join(self.cache_dir, "nutrition")
+        
+        # Create cache directories if they don't exist
+        try:
+            os.makedirs(self.cache_dir, exist_ok=True)
+            os.makedirs(self.nutrition_cache_dir, exist_ok=True)
+        except Exception as e:
+            if self.debug:
+                print(f"Warning: Could not create cache directories: {e}")
+    
+    def get_cache_key(self, campus: str, meal: str, date: str) -> str:
+        """Generate a unique cache key for a specific campus, meal, and date"""
+        key_string = f"{campus}_{meal}_{date}"
+        return hashlib.md5(key_string.encode()).hexdigest()
+    
+    def get_menu_cache_path(self, campus: str, meal: str, date: str) -> str:
+        """Get the cache file path for menu data"""
+        cache_key = self.get_cache_key(campus, meal, date)
+        return os.path.join(self.cache_dir, f"menu_{cache_key}.pkl")
+    
+    def get_nutrition_cache_path(self, campus: str, meal: str, date: str) -> str:
+        """Get the cache file path for nutrition data"""
+        cache_key = self.get_cache_key(campus, meal, date)
+        return os.path.join(self.nutrition_cache_dir, f"nutrition_{cache_key}.pkl")
+    
+    def is_cache_valid(self, cache_path: str, max_age_hours: int = 24) -> bool:
+        """Check if cache file exists and is not older than max_age_hours"""
+        if not os.path.exists(cache_path):
+            return False
+        
+        file_age = time.time() - os.path.getmtime(cache_path)
+        return file_age < (max_age_hours * 3600)
+    
+    def load_from_cache(self, cache_path: str):
+        """Load data from cache file"""
+        try:
+            with open(cache_path, 'rb') as f:
+                return pickle.load(f)
+        except Exception as e:
+            if self.debug:
+                print(f"Error loading cache from {cache_path}: {e}")
+            return None
+    
+    def save_to_cache(self, data, cache_path: str):
+        """Save data to cache file"""
+        try:
+            with open(cache_path, 'wb') as f:
+                pickle.dump(data, f)
+            if self.debug:
+                print(f"Saved data to cache: {cache_path}")
+        except Exception as e:
+            if self.debug:
+                print(f"Error saving cache to {cache_path}: {e}")
+    
+    def get_cached_menu(self, campus: str, meal: str, date: str):
+        """Get cached menu data if available and valid"""
+        cache_path = self.get_menu_cache_path(campus, meal, date)
+        if self.is_cache_valid(cache_path):
+            return self.load_from_cache(cache_path)
+        return None
+    
+    def cache_menu(self, menu_data, campus: str, meal: str, date: str):
+        """Cache menu data"""
+        cache_path = self.get_menu_cache_path(campus, meal, date)
+        self.save_to_cache(menu_data, cache_path)
+    
+    def get_cached_nutrition(self, campus: str, meal: str, date: str):
+        """Get cached nutrition data if available and valid"""
+        cache_path = self.get_nutrition_cache_path(campus, meal, date)
+        if self.is_cache_valid(cache_path):
+            return self.load_from_cache(cache_path)
+        return None
+    
+    def cache_nutrition(self, nutrition_data, campus: str, meal: str, date: str):
+        """Cache nutrition data"""
+        cache_path = self.get_nutrition_cache_path(campus, meal, date)
+        self.save_to_cache(nutrition_data, cache_path)
+    
+    def cleanup_old_cache(self, max_age_days: int = 7):
+        """Clean up cache files older than max_age_days"""
+        try:
+            current_time = time.time()
+            max_age_seconds = max_age_days * 24 * 3600
+            
+            for cache_dir in [self.cache_dir, self.nutrition_cache_dir]:
+                if os.path.exists(cache_dir):
+                    for filename in os.listdir(cache_dir):
+                        file_path = os.path.join(cache_dir, filename)
+                        if os.path.isfile(file_path):
+                            file_age = current_time - os.path.getmtime(file_path)
+                            if file_age > max_age_seconds:
+                                os.remove(file_path)
+                                if self.debug:
+                                    print(f"Removed old cache file: {file_path}")
+        except Exception as e:
+            if self.debug:
+                print(f"Error cleaning up cache: {e}")
 
 # --- CSV Export Manager ---
 class CSVExportManager:
@@ -397,9 +566,10 @@ class MenuAnalyzer:
         self.prioritize_protein = prioritize_protein
         self.extract_nutrition = extract_nutrition
         
-        # Initialize nutritional data extractor and CSV manager
+        # Initialize nutritional data extractor, CSV manager, and cache manager
         self.nutrition_extractor = NutritionalDataExtractor(debug=debug)
         self.csv_manager = CSVExportManager(debug=debug)
+        self.cache_manager = DailyCacheManager(debug=debug)
         
         # Use the passed parameter or fall back to environment variable
         self.gemini_api_key = gemini_api_key or os.getenv('GEMINI_API_KEY')
@@ -512,39 +682,59 @@ class MenuAnalyzer:
         
         return None, ""
 
-    def extract_nutritional_data_for_items(self, items: Dict[str, str]) -> Dict[str, Dict[str, float]]:
-        """Extract nutritional data for all food items"""
+    def extract_nutritional_data_for_items(self, items: Dict[str, str], meal: str, date: str) -> Dict[str, Dict[str, float]]:
+        """Extract nutritional data for all food items with caching"""
         nutrition_data = {}
         
         if not self.extract_nutrition:
             return nutrition_data
         
-        # Limit to first 10 items to prevent timeout
-        limited_items = dict(list(items.items())[:10])
-        
-        for food_name, url in limited_items.items():
+        # Check cache first
+        cached_nutrition = self.cache_manager.get_cached_nutrition(self.campus_key, meal, date)
+        if cached_nutrition:
             if self.debug:
-                print(f"Extracting nutrition data for: {food_name}")
+                print(f"Using cached nutrition data for {meal}")
+            return cached_nutrition
+        
+        if self.debug:
+            print(f"Extracting nutrition data for {len(items)} items in {meal}...")
+        
+        # Process all items (no limit for production)
+        for i, (food_name, url) in enumerate(items.items()):
+            if self.debug:
+                print(f"Extracting nutrition data for: {food_name} ({i+1}/{len(items)})")
             
             try:
                 nutrition = self.nutrition_extractor.extract_nutritional_data(url)
                 if nutrition:
                     nutrition_data[food_name] = nutrition
-                    print(f"Extracted nutrition data: {nutrition}")
+                    if self.debug:
+                        print(f"Extracted nutrition data: {nutrition}")
                 else:
-                    print(f"No nutrition data found for: {food_name}")
+                    if self.debug:
+                        print(f"No nutrition data found for: {food_name}")
             except Exception as e:
-                print(f"Error extracting nutrition for {food_name}: {e}")
-                import traceback
-                traceback.print_exc()
+                if self.debug:
+                    print(f"Error extracting nutrition for {food_name}: {e}")
+                    import traceback
+                    traceback.print_exc()
             
             # Add delay to avoid overwhelming the server
-            time.sleep(0.5)
+            time.sleep(0.3)  # Reduced delay for better performance
+        
+        # Cache the nutrition data
+        if nutrition_data:
+            self.cache_manager.cache_nutrition(nutrition_data, self.campus_key, meal, date)
+            if self.debug:
+                print(f"Cached nutrition data for {meal}")
         
         return nutrition_data
 
     def run_analysis(self) -> Dict[str, List[Tuple[str, int, str, str]]]:
         try:
+            # Get current date for caching
+            current_date = datetime.now().strftime('%Y%m%d')
+            
             if self.debug:
                 print(f"Fetching initial form options for campus: {self.campus_key}")
             
@@ -587,46 +777,56 @@ class MenuAnalyzer:
                         print(f"Could not find form value for '{meal_name}'. Skipping.")
                     continue
 
-                try:
-                    form_data = {'selCampus': campus_value, 'selMeal': meal_value, 'selMenuDate': date_value}
+                # Check cache first for menu items
+                cached_menu = self.cache_manager.get_cached_menu(self.campus_key, meal_name, current_date)
+                if cached_menu:
                     if self.debug:
-                        print(f"Fetching menu for {meal_name} with data: {form_data}")
-                    response = self.session.post(self.base_url, data=form_data, timeout=30)
-                    response.raise_for_status()
-                    meal_soup = BeautifulSoup(response.content, 'html.parser')
-                    items = self.extract_items_from_meal_page(meal_soup)
-                    if items:
-                        daily_menu[meal_name] = items
+                        print(f"Using cached menu data for {meal_name}")
+                    daily_menu[meal_name] = cached_menu
+                else:
+                    try:
+                        form_data = {'selCampus': campus_value, 'selMeal': meal_value, 'selMenuDate': date_value}
                         if self.debug:
-                            print(f"Found {len(items)} items for {meal_name}.")
-                        
-                        # Extract nutritional data if enabled
-                        if self.extract_nutrition:
-                            try:
-                                print(f"Extracting nutrition data for {len(items)} items in {meal_name}...")
-                                nutrition_data = self.extract_nutritional_data_for_items(items)
-                                if nutrition_data:
-                                    print(f"Found nutrition data for {len(nutrition_data)} items")
-                                    # Save nutritional data to CSV
-                                    self.csv_manager.save_nutritional_data(nutrition_data, meal_name, self.campus_key)
-                                    print(f"Saved nutrition data to CSV for {meal_name}")
-                                else:
-                                    print(f"No nutrition data found for {meal_name}")
-                            except Exception as e:
-                                print(f"Error extracting nutrition data for {meal_name}: {e}")
-                                import traceback
-                                traceback.print_exc()
-                    else:
-                        # Explicitly mark meals with no items
+                            print(f"Fetching menu for {meal_name} with data: {form_data}")
+                        response = self.session.post(self.base_url, data=form_data, timeout=30)
+                        response.raise_for_status()
+                        meal_soup = BeautifulSoup(response.content, 'html.parser')
+                        items = self.extract_items_from_meal_page(meal_soup)
+                        if items:
+                            daily_menu[meal_name] = items
+                            # Cache the menu data
+                            self.cache_manager.cache_menu(items, self.campus_key, meal_name, current_date)
+                            if self.debug:
+                                print(f"Found and cached {len(items)} items for {meal_name}.")
+                        else:
+                            # Explicitly mark meals with no items
+                            daily_menu[meal_name] = {}
+                            if self.debug:
+                                print(f"No items found for {meal_name}.")
+                        time.sleep(0.5)
+                    except requests.RequestException as e:
+                        if self.debug:
+                            print(f"Error fetching {meal_name} menu: {e}")
+                        # Mark as no items if there's an error
                         daily_menu[meal_name] = {}
-                        if self.debug:
-                            print(f"No items found for {meal_name}.")
-                    time.sleep(0.5)
-                except requests.RequestException as e:
-                    if self.debug:
-                        print(f"Error fetching {meal_name} menu: {e}")
-                    # Mark as no items if there's an error
-                    daily_menu[meal_name] = {}
+
+                # Extract nutritional data if enabled (for all items)
+                if self.extract_nutrition and daily_menu.get(meal_name):
+                    try:
+                        nutrition_data = self.extract_nutritional_data_for_items(
+                            daily_menu[meal_name], meal_name, current_date
+                        )
+                        if nutrition_data:
+                            print(f"Found nutrition data for {len(nutrition_data)} items in {meal_name}")
+                            # Save nutritional data to CSV
+                            self.csv_manager.save_nutritional_data(nutrition_data, meal_name, self.campus_key)
+                            print(f"Saved nutrition data to CSV for {meal_name}")
+                        else:
+                            print(f"No nutrition data found for {meal_name}")
+                    except Exception as e:
+                        print(f"Error extracting nutrition data for {meal_name}: {e}")
+                        import traceback
+                        traceback.print_exc()
 
             if not daily_menu:
                 print("Failed to scrape any menu items from the website. Using fallback.")
@@ -638,8 +838,11 @@ class MenuAnalyzer:
             for meal, items in analyzed_results.items():
                 # First, apply the hard filters based on user preferences
                 filtered_items = self.apply_hard_filters(items)
-                # Then, slice the list to get only the top 5 items
+                # Then, slice the list to get only the top 5 items for display
                 final_results[meal] = filtered_items[:5]
+            
+            # Clean up old cache files
+            self.cache_manager.cleanup_old_cache()
             
             return final_results
             
@@ -794,7 +997,7 @@ class MenuAnalyzer:
                         item_data = df[df['food_name'] == item]
                         if not item_data.empty:
                             nutrition_dict = item_data.iloc[0].to_dict()
-                            nutrition_score, nutrition_reason = self.nutrition_extractor.calculate_nutrition_score(nutrition_dict, item)
+                            nutrition_score, nutrition_reason = self.nutrition_extractor.calculate_nutrition_score(nutrition_dict, item, self.prioritize_protein)
                             
                             # Use nutrition score as primary score, with keyword analysis as modifier
                             score = nutrition_score
@@ -911,32 +1114,16 @@ def analyze():
         
         print("Running analysis...")
         try:
-            # Add timeout to prevent hanging
-            import signal
-            
-            def timeout_handler(signum, frame):
-                raise TimeoutError("Analysis timed out")
-            
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(60)  # 60 second timeout
-            
             recommendations = analyzer.run_analysis()
-            signal.alarm(0)  # Cancel timeout
-            
             print(f"Analysis complete. Returning recommendations: {recommendations}")
-        except TimeoutError:
-            print("Analysis timed out, returning fallback data")
-            recommendations = {
-                "Breakfast": [["Analysis timed out", 0, "Please try again", "#"]],
-                "Lunch": [["Analysis timed out", 0, "Please try again", "#"]],
-                "Dinner": [["Analysis timed out", 0, "Please try again", "#"]]
-            }
         except Exception as e:
             print(f"Analysis failed: {e}")
+            import traceback
+            traceback.print_exc()
             recommendations = {
-                "Breakfast": [["Analysis failed", 0, "Please try again", "#"]],
-                "Lunch": [["Analysis failed", 0, "Please try again", "#"]],
-                "Dinner": [["Analysis failed", 0, "Please try again", "#"]]
+                "Breakfast": [["Analysis failed", 0, f"Error: {str(e)}", "#"]],
+                "Lunch": [["Analysis failed", 0, f"Error: {str(e)}", "#"]],
+                "Dinner": [["Analysis failed", 0, f"Error: {str(e)}", "#"]]
             }
         
         # Ensure recommendations is in the correct format
@@ -958,6 +1145,32 @@ def get_nutrition_insights(campus):
     try:
         csv_manager = CSVExportManager(debug=True)
         insights = csv_manager.get_nutritional_insights(campus)
+        
+        # Add raw nutritional data for macro display
+        try:
+            current_date = datetime.now().strftime('%Y%m%d')
+            nutrition_data = {}
+            
+            for meal in ['Breakfast', 'Lunch', 'Dinner']:
+                nutrition_file = os.path.join(csv_manager.export_dir, f"{campus}_{meal}_{current_date}_nutrition.csv")
+                if os.path.exists(nutrition_file):
+                    df = pd.read_csv(nutrition_file)
+                    for _, row in df.iterrows():
+                        food_name = row['food_name']
+                        nutrition_data[food_name] = {
+                            'calories': row.get('calories', 0),
+                            'protein': row.get('protein', 0),
+                            'carbs': row.get('carbs', 0),
+                            'fat': row.get('fat', 0),
+                            'fiber': row.get('fiber', 0),
+                            'sodium': row.get('sodium', 0)
+                        }
+            
+            insights['nutrition_data'] = nutrition_data
+        except Exception as e:
+            print(f"Error loading raw nutrition data: {e}")
+            insights['nutrition_data'] = {}
+        
         return jsonify(insights)
     except Exception as e:
         print(f"Error getting nutrition insights: {e}")
@@ -988,6 +1201,80 @@ def download_nutrition_csv(campus):
     except Exception as e:
         print(f"Error downloading nutrition CSV: {e}")
         return jsonify({"error": "Failed to download nutrition data"}), 500
+
+@app.route('/api/cache-status/<campus>')
+def get_cache_status(campus):
+    """Get cache status for a campus"""
+    try:
+        cache_manager = DailyCacheManager(debug=True)
+        current_date = datetime.now().strftime('%Y%m%d')
+        
+        status = {
+            'campus': campus,
+            'date': current_date,
+            'cached_meals': [],
+            'cache_size': 0
+        }
+        
+        # Check which meals are cached
+        for meal in ['Breakfast', 'Lunch', 'Dinner']:
+            menu_cache_path = cache_manager.get_menu_cache_path(campus, meal, current_date)
+            nutrition_cache_path = cache_manager.get_nutrition_cache_path(campus, meal, current_date)
+            
+            if cache_manager.is_cache_valid(menu_cache_path):
+                status['cached_meals'].append({
+                    'meal': meal,
+                    'menu_cached': True,
+                    'nutrition_cached': cache_manager.is_cache_valid(nutrition_cache_path)
+                })
+        
+        # Calculate cache size
+        cache_size = 0
+        for cache_dir in [cache_manager.cache_dir, cache_manager.nutrition_cache_dir]:
+            if os.path.exists(cache_dir):
+                for filename in os.listdir(cache_dir):
+                    file_path = os.path.join(cache_dir, filename)
+                    if os.path.isfile(file_path):
+                        cache_size += os.path.getsize(file_path)
+        
+        status['cache_size'] = cache_size
+        status['cache_size_mb'] = round(cache_size / (1024 * 1024), 2)
+        
+        return jsonify(status)
+    except Exception as e:
+        print(f"Error getting cache status: {e}")
+        return jsonify({"error": "Failed to get cache status"}), 500
+
+@app.route('/api/clear-cache/<campus>', methods=['POST'])
+def clear_cache(campus):
+    """Clear cache for a specific campus"""
+    try:
+        cache_manager = DailyCacheManager(debug=True)
+        current_date = datetime.now().strftime('%Y%m%d')
+        
+        cleared_files = 0
+        
+        # Clear menu cache
+        for meal in ['Breakfast', 'Lunch', 'Dinner']:
+            menu_cache_path = cache_manager.get_menu_cache_path(campus, meal, current_date)
+            nutrition_cache_path = cache_manager.get_nutrition_cache_path(campus, meal, current_date)
+            
+            if os.path.exists(menu_cache_path):
+                os.remove(menu_cache_path)
+                cleared_files += 1
+            
+            if os.path.exists(nutrition_cache_path):
+                os.remove(nutrition_cache_path)
+                cleared_files += 1
+        
+        return jsonify({
+            'message': f'Cleared {cleared_files} cache files for {campus}',
+            'campus': campus,
+            'cleared_files': cleared_files
+        })
+    except Exception as e:
+        print(f"Error clearing cache: {e}")
+        return jsonify({"error": "Failed to clear cache"}), 500
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5001))

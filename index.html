@@ -297,6 +297,56 @@
                 </div>
             </div>
 
+            <!-- Detailed Loading Progress Modal -->
+            <div id="loading-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden z-50">
+                <div class="relative top-20 mx-auto p-6 border w-96 shadow-lg rounded-md bg-white">
+                    <div class="text-center">
+                        <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+                        <h3 class="text-lg font-medium text-gray-900 mb-2">Analyzing Menu Items</h3>
+                        <p class="text-sm text-gray-500 mb-4">Please wait while we process all available menu items...</p>
+                        
+                        <!-- Progress Steps -->
+                        <div class="text-left space-y-2 mb-4">
+                            <div id="step-1" class="flex items-center text-sm">
+                                <div class="w-4 h-4 rounded-full bg-gray-300 mr-3 flex items-center justify-center">
+                                    <div class="w-2 h-2 rounded-full bg-white"></div>
+                                </div>
+                                <span>Fetching menu data...</span>
+                            </div>
+                            <div id="step-2" class="flex items-center text-sm">
+                                <div class="w-4 h-4 rounded-full bg-gray-300 mr-3 flex items-center justify-center">
+                                    <div class="w-2 h-2 rounded-full bg-white"></div>
+                                </div>
+                                <span>Extracting nutritional information...</span>
+                            </div>
+                            <div id="step-3" class="flex items-center text-sm">
+                                <div class="w-4 h-4 rounded-full bg-gray-300 mr-3 flex items-center justify-center">
+                                    <div class="w-2 h-2 rounded-full bg-white"></div>
+                                </div>
+                                <span>Calculating health scores...</span>
+                            </div>
+                            <div id="step-4" class="flex items-center text-sm">
+                                <div class="w-4 h-4 rounded-full bg-gray-300 mr-3 flex items-center justify-center">
+                                    <div class="w-2 h-2 rounded-full bg-white"></div>
+                                </div>
+                                <span>Generating recommendations...</span>
+                            </div>
+                        </div>
+
+                        <!-- Progress Bar -->
+                        <div class="w-full bg-gray-200 rounded-full h-2 mb-4">
+                            <div id="progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                        
+                        <!-- Status Text -->
+                        <p id="loading-status" class="text-xs text-gray-500">Initializing...</p>
+                        
+                        <!-- Time Estimate -->
+                        <p id="time-estimate" class="text-xs text-blue-600 mt-2">Estimated time: 2-3 minutes</p>
+                    </div>
+                </div>
+            </div>
+
             <!-- Nutritional Insights Section -->
             <div id="nutrition-insights" class="bg-white rounded-lg shadow-md p-6 mb-8 hidden">
                 <h3 class="text-xl font-semibold mb-4 text-gray-800">Nutritional Insights</h3>
@@ -402,6 +452,10 @@
             const confirmClearBtn = document.getElementById('confirm-clear-btn');
             const cancelClearBtn = document.getElementById('cancel-clear-btn');
             const passwordError = document.getElementById('password-error');
+            const loadingModal = document.getElementById('loading-modal');
+            const progressBar = document.getElementById('progress-bar');
+            const loadingStatus = document.getElementById('loading-status');
+            const timeEstimate = document.getElementById('time-estimate');
 
             // Utility functions
             const debounce = (func, delay) => {
@@ -524,17 +578,91 @@
                 loadCacheStatus(campusSelect.value);
             });
             
+            // Show detailed loading modal
+            const showLoadingModal = () => {
+                loadingModal.classList.remove('hidden');
+                resetProgressSteps();
+                updateProgress(0, 'Initializing analysis...');
+            };
+
+            // Hide loading modal
+            const hideLoadingModal = () => {
+                loadingModal.classList.add('hidden');
+            };
+
+            // Reset progress steps
+            const resetProgressSteps = () => {
+                for (let i = 1; i <= 4; i++) {
+                    const step = document.getElementById(`step-${i}`);
+                    const circle = step.querySelector('div');
+                    circle.className = 'w-4 h-4 rounded-full bg-gray-300 mr-3 flex items-center justify-center';
+                    circle.innerHTML = '<div class="w-2 h-2 rounded-full bg-white"></div>';
+                }
+            };
+
+            // Update progress step
+            const updateProgressStep = (stepNumber, isActive = false, isCompleted = false) => {
+                const step = document.getElementById(`step-${stepNumber}`);
+                const circle = step.querySelector('div');
+                
+                if (isCompleted) {
+                    circle.className = 'w-4 h-4 rounded-full bg-green-500 mr-3 flex items-center justify-center';
+                    circle.innerHTML = '<svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>';
+                } else if (isActive) {
+                    circle.className = 'w-4 h-4 rounded-full bg-blue-500 mr-3 flex items-center justify-center';
+                    circle.innerHTML = '<div class="w-2 h-2 rounded-full bg-white animate-pulse"></div>';
+                } else {
+                    circle.className = 'w-4 h-4 rounded-full bg-gray-300 mr-3 flex items-center justify-center';
+                    circle.innerHTML = '<div class="w-2 h-2 rounded-full bg-white"></div>';
+                }
+            };
+
+            // Update progress bar and status
+            const updateProgress = (percentage, status) => {
+                progressBar.style.width = `${percentage}%`;
+                loadingStatus.textContent = status;
+                
+                // Update time estimate based on progress
+                if (percentage < 25) {
+                    timeEstimate.textContent = 'Estimated time: 2-3 minutes';
+                } else if (percentage < 50) {
+                    timeEstimate.textContent = 'Estimated time: 1-2 minutes';
+                } else if (percentage < 75) {
+                    timeEstimate.textContent = 'Estimated time: 30-60 seconds';
+                } else {
+                    timeEstimate.textContent = 'Almost done...';
+                }
+            };
+
             // Debounced analysis function
             const debouncedAnalyze = debounce(async () => {
                 const preferences = getPreferences();
                 
-                showLoadingState(`Analyzing menu for ${campusSelect.options[campusSelect.selectedIndex].text}...`, true);
+                // Show detailed loading modal
+                showLoadingModal();
                 
-                // Simulate progress updates
+                // Progress simulation
                 let progressStep = 0;
                 const progressInterval = setInterval(() => {
                     progressStep += 1;
-                    showProgress(progressStep, 15);
+                    
+                    // Update progress steps based on simulation
+                    if (progressStep <= 5) {
+                        updateProgressStep(1, true, false);
+                        updateProgress(20, 'Fetching menu data from Penn State...');
+                    } else if (progressStep <= 10) {
+                        updateProgressStep(1, false, true);
+                        updateProgressStep(2, true, false);
+                        updateProgress(40, 'Extracting nutritional information...');
+                    } else if (progressStep <= 15) {
+                        updateProgressStep(2, false, true);
+                        updateProgressStep(3, true, false);
+                        updateProgress(60, 'Calculating health scores...');
+                    } else if (progressStep <= 20) {
+                        updateProgressStep(3, false, true);
+                        updateProgressStep(4, true, false);
+                        updateProgress(80, 'Generating recommendations...');
+                    }
                 }, 1000);
 
                 try {
@@ -567,6 +695,15 @@
                     });
 
                     clearInterval(progressInterval);
+                    
+                    // Complete all progress steps
+                    updateProgressStep(4, false, true);
+                    updateProgress(100, 'Analysis complete!');
+                    
+                    // Hide modal after a brief delay
+                    setTimeout(() => {
+                        hideLoadingModal();
+                    }, 500);
 
                     console.log('Response status:', response.status);
                     console.log('Response headers:', response.headers);
@@ -596,6 +733,7 @@
 
                 } catch (error) {
                     clearInterval(progressInterval);
+                    hideLoadingModal();
                     console.error('Error fetching recommendations:', error);
                     console.error('Error details:', {
                         message: error.message,

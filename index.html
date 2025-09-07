@@ -383,6 +383,7 @@
                     </div>
                     <p class="mt-2 text-sm text-gray-500">Analyzing ALL menu items with detailed nutritional data...</p>
                     <p class="mt-1 text-xs text-gray-400">First run may take 2-5 minutes. Subsequent runs will be much faster with caching.</p>
+                    <p class="mt-2 text-xs text-blue-600" id="timeout-warning">⏱️ Auto-timeout in 5 minutes if no response</p>
                 ` : '';
                 
                 resultsContainer.innerHTML = `
@@ -494,6 +495,25 @@
                 
                 showLoadingState(`Analyzing menu for ${campusSelect.options[campusSelect.selectedIndex].text}...`, true);
                 
+                // Set up timeout to prevent infinite loading
+                const maxAnalysisTime = 300000; // 5 minutes in milliseconds
+                const timeoutId = setTimeout(() => {
+                    clearInterval(progressInterval);
+                    showErrorState('Analysis timed out after 5 minutes. The server may be overloaded or there may be a connection issue. Please try again.');
+                }, maxAnalysisTime);
+                
+                // Countdown timer for user feedback
+                let timeRemaining = 300; // 5 minutes in seconds
+                const countdownInterval = setInterval(() => {
+                    timeRemaining--;
+                    const timeoutWarning = document.getElementById('timeout-warning');
+                    if (timeoutWarning) {
+                        const minutes = Math.floor(timeRemaining / 60);
+                        const seconds = timeRemaining % 60;
+                        timeoutWarning.textContent = `⏱️ Auto-timeout in ${minutes}:${seconds.toString().padStart(2, '0')} if no response`;
+                    }
+                }, 1000);
+                
                 // Simulate progress updates
                 let progressStep = 0;
                 const progressInterval = setInterval(() => {
@@ -514,6 +534,10 @@
                         }
                     });
 
+                    // Create AbortController for request timeout
+                    const controller = new AbortController();
+                    const requestTimeout = setTimeout(() => controller.abort(), 180000); // 3 minutes for the request itself
+                    
                     const response = await fetch('/api/analyze', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -527,10 +551,15 @@
                                 prioritize_protein: preferences.prioritize_protein,
                                 extract_nutrition: preferences.extract_nutrition
                             }
-                        })
+                        }),
+                        signal: controller.signal
                     });
+                    
+                    clearTimeout(requestTimeout);
 
                     clearInterval(progressInterval);
+                    clearInterval(countdownInterval);
+                    clearTimeout(timeoutId);
 
                     console.log('Response status:', response.status);
                     console.log('Response headers:', response.headers);
@@ -560,6 +589,8 @@
 
                 } catch (error) {
                     clearInterval(progressInterval);
+                    clearInterval(countdownInterval);
+                    clearTimeout(timeoutId);
                     console.error('Error fetching recommendations:', error);
                     console.error('Error details:', {
                         message: error.message,
@@ -568,9 +599,14 @@
                     });
                     
                     // Show more specific error message
-                    const errorMessage = error.message.includes('Failed to fetch') 
-                        ? 'Connection Error: Could not connect to the backend server. Please check if the server is running.'
-                        : `Error: ${error.message}`;
+                    let errorMessage;
+                    if (error.name === 'AbortError') {
+                        errorMessage = 'Request timed out after 3 minutes. The server is taking too long to respond. Please try again.';
+                    } else if (error.message.includes('Failed to fetch')) {
+                        errorMessage = 'Connection Error: Could not connect to the backend server. Please check if the server is running.';
+                    } else {
+                        errorMessage = `Error: ${error.message}`;
+                    }
                     
                     showErrorState(errorMessage);
                 }
@@ -580,8 +616,9 @@
 
             // Error state function
             function showErrorState(errorMessage) {
-                const resultsContainer = document.getElementById('results');
-                resultsContainer.innerHTML = `
+                const resultsContainer = document.getElementById('results-container');
+                if (resultsContainer) {
+                    resultsContainer.innerHTML = `
                     <div class="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
                         <div class="text-red-600 text-lg font-semibold mb-2">⚠️ Error</div>
                         <p class="text-red-700 mb-4">${errorMessage}</p>
@@ -590,6 +627,9 @@
                         </button>
                     </div>
                 `;
+                } else {
+                    console.error('Results container not found');
+                }
             }
 
             // Fallback function when backend is not available

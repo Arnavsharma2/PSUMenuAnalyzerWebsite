@@ -1068,6 +1068,12 @@ def analyze():
         if not data:
             return jsonify({"error": "No data provided"}), 400
         
+        # Validate campus parameter
+        campus = data.get('campus', 'altoona-port-sky')
+        if campus not in CAMPUS_URLS:
+            print(f"ERROR: Invalid campus '{campus}'. Available campuses: {list(CAMPUS_URLS.keys())}")
+            return jsonify({"error": f"Invalid campus '{campus}'. Available campuses: {list(CAMPUS_URLS.keys())}"}), 400
+        
         # Handle both old format (individual params) and new format (preferences object)
         if 'preferences' in data:
             # New format with preferences object
@@ -1100,17 +1106,24 @@ def analyze():
         print(f"Gemini API key available: {bool(api_key)}")
 
         print("Creating MenuAnalyzer instance...")
-        analyzer = MenuAnalyzer(
-            campus_key=campus,
-            gemini_api_key=api_key,
-            exclude_beef=exclude_beef,
-            exclude_pork=exclude_pork,
-            vegetarian=vegetarian,
-            vegan=vegan,
-            prioritize_protein=prioritize_protein,
-            debug=True,
-            extract_nutrition=extract_nutrition
-        )
+        try:
+            analyzer = MenuAnalyzer(
+                campus_key=campus,
+                gemini_api_key=api_key,
+                exclude_beef=exclude_beef,
+                exclude_pork=exclude_pork,
+                vegetarian=vegetarian,
+                vegan=vegan,
+                prioritize_protein=prioritize_protein,
+                debug=True,
+                extract_nutrition=extract_nutrition
+            )
+            print("MenuAnalyzer created successfully")
+        except Exception as e:
+            print(f"ERROR creating MenuAnalyzer: {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": f"Failed to create analyzer: {str(e)}"}), 500
         
         print("Running analysis...")
         try:

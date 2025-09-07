@@ -479,29 +479,27 @@
                 }, 1000);
 
                 try {
-                    // Auto-detect if running locally or on Railway
-                    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-                    const apiUrl = isLocal 
-                        ? 'http://127.0.0.1:5001/api/analyze'  // Local development
-                        : '/api/analyze';  // Railway deployment (relative URL)
+                    // Use relative URL for deployment
+                    const apiUrl = '/api/analyze';
                     
                     const response = await fetch(apiUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(preferences)
+                        body: JSON.stringify(preferences),
+                        timeout: 30000  // 30 second timeout
                     });
 
                     clearInterval(progressInterval);
 
                     if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response from server.' }));
+                        const errorData = await response.json().catch(() => ({ error: 'Server error occurred.' }));
                         throw new Error(errorData.error || `Server responded with status: ${response.status}`);
                     }
 
                     const data = await response.json();
                     displayResults(data);
                     
-                    // Always show nutrition insights section since nutritional analysis is always enabled
+                    // Show nutrition insights section
                     nutritionInsights.classList.remove('hidden');
                     loadNutritionInsights(preferences.campus);
 
@@ -509,30 +507,50 @@
                     clearInterval(progressInterval);
                     console.error('Error fetching recommendations:', error);
                     
-                    let errorMessage = "Could not connect to the backend server.";
-                    let suggestion = "Please try again later.";
-                    
-                    if (error.message.includes('429')) {
-                        errorMessage = "Too many requests. Please wait a moment before trying again.";
-                        suggestion = "Rate limit exceeded. Please wait 1 minute before retrying.";
-                    } else if (error.message.includes('500')) {
-                        errorMessage = "Server error occurred.";
-                        suggestion = "Please try again in a few moments.";
-                    } else if (error.message.includes('400')) {
-                        errorMessage = "Invalid request data.";
-                        suggestion = "Please refresh the page and try again.";
-                    }
-                    
-                    resultsContainer.innerHTML = `
-                        <div class="bg-red-100 border-l-4 border-red-500 text-red-800 p-4 rounded-lg shadow-sm fade-in" role="alert">
-                            <p class="font-bold">Connection Error</p>
-                            <p>${errorMessage}</p>
-                            <p class="mt-2 text-sm">${suggestion}</p>
-                        </div>`;
+                    // Show fallback data instead of error
+                    showFallbackResults();
                 }
             }, 500);
 
             analyzeBtn.addEventListener('click', debouncedAnalyze);
+
+            // Fallback function when backend is not available
+            function showFallbackResults() {
+                const fallbackData = {
+                    "Breakfast": [
+                        ["Scrambled Eggs", 75, "High protein, good for breakfast", "#"],
+                        ["Oatmeal", 70, "High fiber, heart healthy", "#"],
+                        ["Greek Yogurt", 65, "High protein, probiotics", "#"],
+                        ["Fresh Fruit", 60, "Natural vitamins and fiber", "#"],
+                        ["Whole Grain Toast", 55, "Complex carbohydrates", "#"]
+                    ],
+                    "Lunch": [
+                        ["Grilled Chicken Salad", 80, "High protein, low calorie", "#"],
+                        ["Salmon Fillet", 75, "Omega-3 fatty acids, high protein", "#"],
+                        ["Quinoa Bowl", 70, "Complete protein, high fiber", "#"],
+                        ["Turkey Sandwich", 65, "Lean protein, balanced meal", "#"],
+                        ["Vegetable Soup", 60, "Low calorie, high nutrients", "#"]
+                    ],
+                    "Dinner": [
+                        ["Baked Salmon", 85, "High protein, omega-3s", "#"],
+                        ["Grilled Chicken Breast", 80, "Lean protein, low fat", "#"],
+                        ["Vegetable Stir Fry", 75, "High fiber, vitamins", "#"],
+                        ["Brown Rice Bowl", 70, "Complex carbs, fiber", "#"],
+                        ["Roasted Vegetables", 65, "Antioxidants, vitamins", "#"]
+                    ]
+                };
+                
+                displayResults(fallbackData);
+                
+                // Show a notice that this is fallback data
+                const notice = document.createElement('div');
+                notice.className = 'bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-4 rounded-lg shadow-sm mb-4';
+                notice.innerHTML = `
+                    <p class="font-bold">Demo Mode</p>
+                    <p>Backend server is not available. Showing sample recommendations.</p>
+                `;
+                resultsContainer.insertBefore(notice, resultsContainer.firstChild);
+            }
 
             // Load nutrition insights
             async function loadNutritionInsights(campus) {

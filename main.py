@@ -519,7 +519,10 @@ class MenuAnalyzer:
         if not self.extract_nutrition:
             return nutrition_data
         
-        for food_name, url in items.items():
+        # Limit to first 10 items to prevent timeout
+        limited_items = dict(list(items.items())[:10])
+        
+        for food_name, url in limited_items.items():
             if self.debug:
                 print(f"Extracting nutrition data for: {food_name}")
             
@@ -527,9 +530,13 @@ class MenuAnalyzer:
                 nutrition = self.nutrition_extractor.extract_nutritional_data(url)
                 if nutrition:
                     nutrition_data[food_name] = nutrition
+                    print(f"Extracted nutrition data: {nutrition}")
+                else:
+                    print(f"No nutrition data found for: {food_name}")
             except Exception as e:
-                if self.debug:
-                    print(f"Error extracting nutrition for {food_name}: {e}")
+                print(f"Error extracting nutrition for {food_name}: {e}")
+                import traceback
+                traceback.print_exc()
             
             # Add delay to avoid overwhelming the server
             time.sleep(0.5)
@@ -596,13 +603,19 @@ class MenuAnalyzer:
                         # Extract nutritional data if enabled
                         if self.extract_nutrition:
                             try:
+                                print(f"Extracting nutrition data for {len(items)} items in {meal_name}...")
                                 nutrition_data = self.extract_nutritional_data_for_items(items)
                                 if nutrition_data:
+                                    print(f"Found nutrition data for {len(nutrition_data)} items")
                                     # Save nutritional data to CSV
                                     self.csv_manager.save_nutritional_data(nutrition_data, meal_name, self.campus_key)
+                                    print(f"Saved nutrition data to CSV for {meal_name}")
+                                else:
+                                    print(f"No nutrition data found for {meal_name}")
                             except Exception as e:
-                                if self.debug:
-                                    print(f"Error extracting nutrition data for {meal_name}: {e}")
+                                print(f"Error extracting nutrition data for {meal_name}: {e}")
+                                import traceback
+                                traceback.print_exc()
                     else:
                         # Explicitly mark meals with no items
                         daily_menu[meal_name] = {}
@@ -897,8 +910,34 @@ def analyze():
         )
         
         print("Running analysis...")
-        recommendations = analyzer.run_analysis()
-        print(f"Analysis complete. Returning recommendations: {recommendations}")
+        try:
+            # Add timeout to prevent hanging
+            import signal
+            
+            def timeout_handler(signum, frame):
+                raise TimeoutError("Analysis timed out")
+            
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(60)  # 60 second timeout
+            
+            recommendations = analyzer.run_analysis()
+            signal.alarm(0)  # Cancel timeout
+            
+            print(f"Analysis complete. Returning recommendations: {recommendations}")
+        except TimeoutError:
+            print("Analysis timed out, returning fallback data")
+            recommendations = {
+                "Breakfast": [["Analysis timed out", 0, "Please try again", "#"]],
+                "Lunch": [["Analysis timed out", 0, "Please try again", "#"]],
+                "Dinner": [["Analysis timed out", 0, "Please try again", "#"]]
+            }
+        except Exception as e:
+            print(f"Analysis failed: {e}")
+            recommendations = {
+                "Breakfast": [["Analysis failed", 0, "Please try again", "#"]],
+                "Lunch": [["Analysis failed", 0, "Please try again", "#"]],
+                "Dinner": [["Analysis failed", 0, "Please try again", "#"]]
+            }
         
         # Ensure recommendations is in the correct format
         if not isinstance(recommendations, dict):

@@ -479,14 +479,10 @@
                 }, 1000);
 
                 try {
-                    // Use relative URL for deployment
-                    const apiUrl = '/api/analyze';
-                    
-                    const response = await fetch(apiUrl, {
+                    const response = await fetch('/api/analyze', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(preferences),
-                        timeout: 30000  // 30 second timeout
+                        body: JSON.stringify(preferences)
                     });
 
                     clearInterval(progressInterval);
@@ -555,12 +551,7 @@
             // Load nutrition insights
             async function loadNutritionInsights(campus) {
                 try {
-                    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-                    const apiUrl = isLocal 
-                        ? `http://127.0.0.1:5001/api/nutrition-insights/${campus}`
-                        : `/api/nutrition-insights/${campus}`;
-                    
-                    const response = await fetch(apiUrl);
+                    const response = await fetch(`/api/nutrition-insights/${campus}`);
                     if (response.ok) {
                         const insights = await response.json();
                         displayNutritionInsights(insights);
@@ -600,12 +591,7 @@
             downloadCsvBtn.addEventListener('click', async () => {
                 try {
                     const campus = campusSelect.value;
-                    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-                    const apiUrl = isLocal 
-                        ? `http://127.0.0.1:5001/api/download-nutrition/${campus}`
-                        : `/api/download-nutrition/${campus}`;
-                    
-                    const response = await fetch(apiUrl);
+                    const response = await fetch(`/api/download-nutrition/${campus}`);
                     if (response.ok) {
                         const blob = await response.blob();
                         const url = window.URL.createObjectURL(blob);

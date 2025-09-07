@@ -34,60 +34,106 @@ class NutritionalDataExtractor:
             
             nutrition_data = {}
             
+            # Check if nutrition data is not available
+            if "nutrition information is not available" in soup.get_text().lower():
+                if self.debug:
+                    print(f"No nutrition data available for {url}")
+                return {}
+            
             # Look for nutrition facts table or similar structure
             nutrition_tables = soup.find_all('table', class_=re.compile(r'nutrition|facts', re.I))
+            
+            # Also look for any table that might contain nutritional data
+            if not nutrition_tables:
+                all_tables = soup.find_all('table')
+                for table in all_tables:
+                    table_text = table.get_text().lower()
+                    if any(keyword in table_text for keyword in ['calories', 'protein', 'fat', 'sodium', 'fiber']):
+                        nutrition_tables.append(table)
             
             for table in nutrition_tables:
                 rows = table.find_all('tr')
                 for row in rows:
                     cells = row.find_all(['td', 'th'])
-                    if len(cells) >= 2:
-                        label = cells[0].get_text(strip=True).lower()
-                        value_text = cells[1].get_text(strip=True)
+                    if len(cells) >= 1:
+                        # Get all text from the row
+                        row_text = row.get_text(strip=True).lower()
                         
-                        # Extract numeric values
-                        value_match = re.search(r'(\d+\.?\d*)', value_text)
-                        if value_match:
-                            value = float(value_match.group(1))
-                            
-                            # Map common nutrition labels
-                            if 'calories' in label:
-                                nutrition_data['calories'] = value
-                            elif 'protein' in label:
-                                nutrition_data['protein'] = value
-                            elif 'fat' in label and 'total' in label:
-                                nutrition_data['fat'] = value
-                            elif 'saturated' in label and 'fat' in label:
-                                nutrition_data['saturated_fat'] = value
-                            elif 'carbohydrate' in label or 'carbs' in label:
-                                nutrition_data['carbs'] = value
-                            elif 'fiber' in label:
-                                nutrition_data['fiber'] = value
-                            elif 'sugar' in label:
-                                nutrition_data['sugar'] = value
-                            elif 'sodium' in label:
-                                nutrition_data['sodium'] = value
-                            elif 'cholesterol' in label:
-                                nutrition_data['cholesterol'] = value
+                        # Extract nutritional data using patterns that match the PSU format
+                        patterns = {
+                            'calories': r'calories:\s*(\d+\.?\d*)',
+                            'protein': r'protein\s*(\d+\.?\d*)\s*g',
+                            'fat': r'total\s+fat\s*(\d+\.?\d*)\s*g',
+                            'saturated_fat': r'sat\s+fat\s*(\d+\.?\d*)\s*g',
+                            'carbs': r'total\s+carb\s*(\d+\.?\d*)\s*g',
+                            'fiber': r'dietary\s+fiber\s*(\d+\.?\d*)\s*g',
+                            'sugar': r'sugars\s*(\d+\.?\d*)\s*g',
+                            'sodium': r'sodium\s*(\d+\.?\d*)\s*mg',
+                            'cholesterol': r'cholesterol\s*(\d+\.?\d*)\s*mg'
+                        }
+                        
+                        # Also try to extract from the specific PSU table structure
+                        # Look for patterns like "Protein 10.1g" or "Total Fat 5.1g"
+                        psu_patterns = {
+                            'calories': r'calories:\s*(\d+\.?\d*)',
+                            'protein': r'protein\s*(\d+\.?\d*)\s*g',
+                            'fat': r'total\s+fat\s*(\d+\.?\d*)\s*g',
+                            'saturated_fat': r'sat\s+fat\s*(\d+\.?\d*)\s*g',
+                            'carbs': r'total\s+carb\s*(\d+\.?\d*)\s*g',
+                            'fiber': r'dietary\s+fiber\s*(\d+\.?\d*)\s*g',
+                            'sugar': r'sugars\s*(\d+\.?\d*)\s*g',
+                            'sodium': r'sodium\s*(\d+\.?\d*)\s*mg',
+                            'cholesterol': r'cholesterol\s*(\d+\.?\d*)\s*mg'
+                        }
+                        
+                        for key, pattern in patterns.items():
+                            match = re.search(pattern, row_text)
+                            if match and key not in nutrition_data:  # Only set if not already found
+                                nutrition_data[key] = float(match.group(1))
             
-            # If no structured data found, try to extract from text
+            # If no structured data found, try to extract from text with more patterns
             if not nutrition_data:
                 page_text = soup.get_text().lower()
                 
-                # Look for common nutrition patterns in text
+                # Look for common nutrition patterns in text with more flexible matching
                 patterns = {
-                    'calories': r'(\d+)\s*calories?',
-                    'protein': r'(\d+\.?\d*)\s*g\s*protein',
-                    'fat': r'(\d+\.?\d*)\s*g\s*fat',
-                    'carbs': r'(\d+\.?\d*)\s*g\s*(?:carbs|carbohydrates?)',
-                    'fiber': r'(\d+\.?\d*)\s*g\s*fiber',
-                    'sodium': r'(\d+\.?\d*)\s*mg\s*sodium'
+                    'calories': r'calories?:\s*(\d+\.?\d*)',
+                    'protein': r'protein\s*(\d+\.?\d*)\s*g',
+                    'fat': r'total\s+fat\s*(\d+\.?\d*)\s*g',
+                    'saturated_fat': r'sat\s+fat\s*(\d+\.?\d*)\s*g',
+                    'carbs': r'total\s+carb\s*(\d+\.?\d*)\s*g',
+                    'fiber': r'fiber\s*(\d+\.?\d*)\s*g',
+                    'sugar': r'sugar\s*(\d+\.?\d*)\s*g',
+                    'sodium': r'sodium\s*(\d+\.?\d*)\s*mg',
+                    'cholesterol': r'cholesterol\s*(\d+\.?\d*)\s*mg'
                 }
                 
                 for key, pattern in patterns.items():
                     match = re.search(pattern, page_text)
                     if match:
                         nutrition_data[key] = float(match.group(1))
+            
+            # If still no data found, try to extract from any text that looks like nutritional info
+            if not nutrition_data:
+                page_text = soup.get_text()
+                # Look for patterns like "Calories: 250" or "Protein: 15g"
+                text_patterns = {
+                    'calories': r'calories?:\s*(\d+\.?\d*)',
+                    'protein': r'protein:\s*(\d+\.?\d*)\s*g',
+                    'fat': r'(?:total\s+)?fat:\s*(\d+\.?\d*)\s*g',
+                    'carbs': r'(?:carbs|carbohydrates?):\s*(\d+\.?\d*)\s*g',
+                    'fiber': r'fiber:\s*(\d+\.?\d*)\s*g',
+                    'sodium': r'sodium:\s*(\d+\.?\d*)\s*mg'
+                }
+                
+                for key, pattern in text_patterns.items():
+                    match = re.search(pattern, page_text, re.IGNORECASE)
+                    if match:
+                        nutrition_data[key] = float(match.group(1))
+            
+            # If no nutritional data was found, try to estimate based on food name
+            if not nutrition_data:
+                nutrition_data = self.estimate_nutrition_from_name(url)
             
             if self.debug and nutrition_data:
                 print(f"Extracted nutrition data: {nutrition_data}")
@@ -99,81 +145,141 @@ class NutritionalDataExtractor:
                 print(f"Error extracting nutrition data from {url}: {e}")
             return {}
     
-    def calculate_nutrition_score(self, nutrition_data: Dict[str, float]) -> Tuple[int, str]:
+    def estimate_nutrition_from_name(self, url: str) -> Dict[str, float]:
+        """Estimate nutritional values based on food name when detailed data isn't available"""
+        # Extract food name from URL or use a generic approach
+        food_name = ""
+        try:
+            # Try to extract food name from URL parameters or use a generic approach
+            if 'mid=' in url:
+                # This is a PSU nutrition URL, we can't easily extract the name
+                # Return empty dict to indicate no estimation available
+                return {}
+        except:
+            pass
+        
+        # For now, return empty dict - we'll improve this later
+        return {}
+    
+    def calculate_nutrition_score(self, nutrition_data: Dict[str, float], food_name: str = "") -> Tuple[int, str]:
         """Calculate a health score based on nutritional data"""
         if not nutrition_data:
             return 50, "No nutritional data available"
         
+        # Check if this is a CYO (Create Your Own) item
+        is_cyo = food_name and "cyo" in food_name.lower()
+        
+        # Check if we have detailed nutritional data or just calories
+        has_detailed_data = any(nutrition_data.get(key, 0) > 0 for key in ['protein', 'fat', 'carbs', 'fiber', 'sodium'])
+        
         score = 50  # Base score
         reasons = []
         
-        # Protein scoring (higher is better)
-        protein = nutrition_data.get('protein', 0)
-        if protein >= 25:
-            score += 20
-            reasons.append("High protein")
-        elif protein >= 15:
-            score += 10
-            reasons.append("Moderate protein")
-        elif protein < 5:
-            score -= 10
-            reasons.append("Low protein")
+        # Special handling for CYO items
+        if is_cyo:
+            # CYO items get a base score that reflects their potential for healthy customization
+            score = 70  # Higher base score for CYO items
+            reasons.append("Customizable - can be made healthy")
+            
+            # For CYO items, we're more lenient with protein scoring since it depends on user choices
+            protein = nutrition_data.get('protein', 0)
+            if protein > 0:  # If there's any protein data, use it
+                if protein >= 20:
+                    score += 15
+                    reasons.append("Good protein content")
+                elif protein >= 10:
+                    score += 10
+                    reasons.append("Moderate protein content")
+            else:
+                # No protein data for CYO - don't penalize heavily
+                score += 5
+                reasons.append("Protein content depends on customization")
+        else:
+            # Regular items use standard protein scoring
+            protein = nutrition_data.get('protein', 0)
+            if protein > 0:  # Only apply protein scoring if we have protein data
+                if protein >= 25:
+                    score += 20
+                    reasons.append("High protein")
+                elif protein >= 15:
+                    score += 10
+                    reasons.append("Moderate protein")
+                elif protein < 5:
+                    score -= 10
+                    reasons.append("Low protein")
         
-        # Calorie density scoring
+        # Calorie density scoring (only if we have both calories and protein data)
         calories = nutrition_data.get('calories', 0)
-        if calories > 0:
+        if calories > 0 and protein > 0:
             protein_per_calorie = protein / calories if calories > 0 else 0
             if protein_per_calorie >= 0.1:  # 10g protein per 100 calories
                 score += 15
                 reasons.append("Good protein density")
-            elif protein_per_calorie < 0.05:  # Less than 5g protein per 100 calories
+            elif protein_per_calorie < 0.05 and not is_cyo:  # Less than 5g protein per 100 calories (only penalize non-CYO)
                 score -= 10
                 reasons.append("Low protein density")
         
-        # Fat scoring (moderate is better)
+        # If we only have calories and no other nutritional data, use calorie-based scoring
+        if not has_detailed_data and calories > 0:
+            if calories <= 200:
+                score += 10
+                reasons.append("Low calorie option")
+            elif calories <= 400:
+                score += 5
+                reasons.append("Moderate calorie option")
+            elif calories > 800:
+                score -= 10
+                reasons.append("High calorie option")
+        
+        # Fat scoring (only if we have fat data)
         fat = nutrition_data.get('fat', 0)
-        if 10 <= fat <= 25:
-            score += 5
-            reasons.append("Moderate fat content")
-        elif fat > 40:
-            score -= 15
-            reasons.append("High fat content")
+        if fat > 0:
+            if 10 <= fat <= 25:
+                score += 5
+                reasons.append("Moderate fat content")
+            elif fat > 40:
+                score -= 15
+                reasons.append("High fat content")
         
-        # Saturated fat penalty
+        # Saturated fat penalty (only if we have saturated fat data)
         saturated_fat = nutrition_data.get('saturated_fat', 0)
-        if saturated_fat > 10:
-            score -= 15
-            reasons.append("High saturated fat")
-        elif saturated_fat > 5:
-            score -= 5
-            reasons.append("Moderate saturated fat")
+        if saturated_fat > 0:
+            if saturated_fat > 10:
+                score -= 15
+                reasons.append("High saturated fat")
+            elif saturated_fat > 5:
+                score -= 5
+                reasons.append("Moderate saturated fat")
         
-        # Fiber bonus
+        # Fiber bonus (only if we have fiber data)
         fiber = nutrition_data.get('fiber', 0)
-        if fiber >= 5:
-            score += 10
-            reasons.append("High fiber")
-        elif fiber >= 3:
-            score += 5
-            reasons.append("Moderate fiber")
+        if fiber > 0:
+            if fiber >= 5:
+                score += 10
+                reasons.append("High fiber")
+            elif fiber >= 3:
+                score += 5
+                reasons.append("Moderate fiber")
         
-        # Sugar penalty
+        # Sugar penalty (only if we have sugar data)
         sugar = nutrition_data.get('sugar', 0)
-        if sugar > 20:
-            score -= 15
-            reasons.append("High sugar")
-        elif sugar > 10:
-            score -= 5
-            reasons.append("Moderate sugar")
+        if sugar > 0:
+            if sugar > 20:
+                score -= 15
+                reasons.append("High sugar")
+            elif sugar > 10:
+                score -= 5
+                reasons.append("Moderate sugar")
         
-        # Sodium penalty
+        # Sodium penalty (only if we have sodium data)
         sodium = nutrition_data.get('sodium', 0)
-        if sodium > 1000:
-            score -= 15
-            reasons.append("High sodium")
-        elif sodium > 600:
-            score -= 5
-            reasons.append("Moderate sodium")
+        if sodium > 0:
+            if sodium > 1000:
+                score -= 15
+                reasons.append("High sodium")
+            elif sodium > 600:
+                score -= 5
+                reasons.append("Moderate sodium")
         
         score = max(0, min(100, score))
         return score, "; ".join(reasons) if reasons else "Standard nutritional profile"
@@ -356,10 +462,14 @@ class MenuAnalyzer:
 
     def extract_items_from_meal_page(self, soup: BeautifulSoup) -> Dict[str, str]:
         items = {}
+        # Look specifically for nutrition links
         for a_tag in soup.find_all('a', href=True):
+            href = a_tag.get('href', '')
             text = a_tag.get_text(strip=True)
-            if self.looks_like_food_item(text):
-                relative_url = a_tag['href']
+            
+            # Check if this is a nutrition link
+            if 'nutrition-label' in href and self.looks_like_food_item(text):
+                relative_url = href
                 full_url = urljoin(self.base_url, relative_url)
                 items[text] = full_url
         return items
@@ -542,14 +652,45 @@ class MenuAnalyzer:
 
             priority_instruction = ("prioritize PROTEIN content" if self.prioritize_protein else "prioritize a BALANCE of high protein and healthy preparation")
             
-            menu_for_prompt = {meal: list(items.keys()) for meal, items in daily_menu.items()}
+            # Get nutritional data for each meal to include in analysis
+            menu_with_nutrition = {}
+            for meal, items in daily_menu.items():
+                menu_with_nutrition[meal] = {}
+                for food_name, url in items.items():
+                    # Try to get nutritional data for this item
+                    nutrition_data = {}
+                    try:
+                        nutrition_file = os.path.join(self.csv_manager.export_dir, f"{self.campus_key}_{meal}_{datetime.now().strftime('%Y%m%d')}_nutrition.csv")
+                        if os.path.exists(nutrition_file):
+                            df = pd.read_csv(nutrition_file)
+                            item_data = df[df['food_name'] == food_name]
+                            if not item_data.empty:
+                                nutrition_data = item_data.iloc[0].to_dict()
+                    except Exception as e:
+                        if self.debug:
+                            print(f"Error loading nutrition data for {food_name}: {e}")
+                    
+                    menu_with_nutrition[meal][food_name] = {
+                        'url': url,
+                        'nutrition': nutrition_data
+                    }
 
             # Ask for more items (e.g., 15) to allow for filtering down to 5.
             prompt = f"""
             Analyze the menu below. Your goal is to {priority_instruction}. My restrictions are: {restrictions_text}
-            For EACH meal, identify the top 15 options.
-            Return your response as a single, valid JSON object with keys "Breakfast", "Lunch", "Dinner". Each value should be a list of objects, each with "food_name", "score" (0-100), and "reasoning".
-            Menu: {json.dumps(menu_for_prompt, indent=2)}
+            
+            IMPORTANT: Use the detailed nutritional data provided for each food item to make accurate health assessments. 
+            Prioritize items with higher protein content, lower sodium, higher fiber, and better macro/micronutrient profiles.
+            
+            SPECIAL NOTE: Items with "CYO" (Create Your Own) in the name have variable nutritional content based on user customization choices. 
+            These items should be scored based on their potential for healthy customization rather than their base nutritional values.
+            CYO items like salads, bowls, and wraps can be made very healthy depending on ingredient choices.
+            
+            For EACH meal, identify the top 15 options based on nutritional value and health benefits.
+            Return your response as a single, valid JSON object with keys "Breakfast", "Lunch", "Dinner". 
+            Each value should be a list of objects, each with "food_name", "score" (0-100), and "reasoning".
+            
+            Menu with nutritional data: {json.dumps(menu_with_nutrition, indent=2)}
             """
             
             response = self.session.post(self.gemini_url, headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=60)
@@ -628,12 +769,10 @@ class MenuAnalyzer:
         for item, url in food_items.items():
             item_lower = item.lower()
             score, reasoning = 50, []
+            has_nutrition_data = False
             
-            # Try to get nutritional data if available
-            nutrition_score = 0
-            nutrition_reason = ""
+            # Try to get nutritional data if available - this is now the primary scoring method
             if self.extract_nutrition and meal:
-                # Check if we have saved nutritional data for this item
                 try:
                     nutrition_file = os.path.join(self.csv_manager.export_dir, f"{self.campus_key}_{meal}_{datetime.now().strftime('%Y%m%d')}_nutrition.csv")
                     if os.path.exists(nutrition_file):
@@ -641,24 +780,43 @@ class MenuAnalyzer:
                         item_data = df[df['food_name'] == item]
                         if not item_data.empty:
                             nutrition_dict = item_data.iloc[0].to_dict()
-                            nutrition_score, nutrition_reason = self.nutrition_extractor.calculate_nutrition_score(nutrition_dict)
-                            score = (score + nutrition_score) / 2  # Average with base score
-                            reasoning.append(f"Nutrition-based: {nutrition_reason}")
+                            nutrition_score, nutrition_reason = self.nutrition_extractor.calculate_nutrition_score(nutrition_dict, item)
+                            
+                            # Use nutrition score as primary score, with keyword analysis as modifier
+                            score = nutrition_score
+                            reasoning.append(f"Nutritional analysis: {nutrition_reason}")
+                            has_nutrition_data = True
+                            
+                            if self.debug:
+                                print(f"Using nutritional data for {item}: score={nutrition_score}, reason={nutrition_reason}")
                 except Exception as e:
                     if self.debug:
                         print(f"Error loading nutrition data for {item}: {e}")
             
-            # Original keyword-based analysis
-            for level, keywords in protein_keywords.items():
-                if any(kw in item_lower for kw in keywords):
-                    score += protein_weights[level]
-                    reasoning.append(f"High protein ({level})")
-                    break
-            for level, keywords in healthy_prep.items():
-                if any(kw in item_lower for kw in keywords):
-                    score += prep_weights[level]
-                    reasoning.append(f"Prep style ({level})")
-                    break
+            # If no nutritional data available, fall back to keyword-based analysis
+            if not has_nutrition_data:
+                for level, keywords in protein_keywords.items():
+                    if any(kw in item_lower for kw in keywords):
+                        score += protein_weights[level]
+                        reasoning.append(f"High protein ({level})")
+                        break
+                for level, keywords in healthy_prep.items():
+                    if any(kw in item_lower for kw in keywords):
+                        score += prep_weights[level]
+                        reasoning.append(f"Prep style ({level})")
+                        break
+            else:
+                # If we have nutritional data, add keyword-based modifiers (smaller impact)
+                for level, keywords in protein_keywords.items():
+                    if any(kw in item_lower for kw in keywords):
+                        score += protein_weights[level] * 0.3  # Reduced impact when nutrition data is available
+                        reasoning.append(f"Protein keyword bonus ({level})")
+                        break
+                for level, keywords in healthy_prep.items():
+                    if any(kw in item_lower for kw in keywords):
+                        score += prep_weights[level] * 0.3  # Reduced impact when nutrition data is available
+                        reasoning.append(f"Prep style bonus ({level})")
+                        break
             
             score = max(0, min(100, score))
             health_scores.append((item, score, ", ".join(reasoning) or "Standard option", url))
@@ -698,7 +856,7 @@ def analyze():
         exclude_beef = data.get('exclude_beef', False)
         exclude_pork = data.get('exclude_pork', False)
         prioritize_protein = data.get('prioritize_protein', False)
-        extract_nutrition = data.get('extract_nutrition', True)  # Default to True
+        extract_nutrition = True  # Always enabled
         
         print(f"Parsed parameters - campus: {campus}, vegetarian: {vegetarian}, vegan: {vegan}")
         

@@ -229,14 +229,6 @@
                             <span class="slider"></span>
                         </label>
                     </div>
-                    <!-- Nutritional Analysis Toggle -->
-                    <div class="flex items-center justify-between bg-gray-50 p-4 rounded-lg">
-                        <span class="font-medium text-gray-700">Extract Nutritional Data</span>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="extract-nutrition" checked>
-                            <span class="slider"></span>
-                        </label>
-                    </div>
                     <!-- Exclude Beef Toggle -->
                     <div id="beef-pref" class="preference-item flex items-center justify-between bg-gray-50 p-4 rounded-lg">
                         <span class="font-medium text-gray-700">Exclude Beef</span>
@@ -427,7 +419,7 @@
                     exclude_beef: document.getElementById('exclude-beef').checked,
                     exclude_pork: document.getElementById('exclude-pork').checked,
                     prioritize_protein: document.getElementById('prioritize-protein').checked,
-                    extract_nutrition: document.getElementById('extract-nutrition').checked
+                    extract_nutrition: true  // Always enabled
                 };
             };
 
@@ -509,11 +501,9 @@
                     const data = await response.json();
                     displayResults(data);
                     
-                    // Show nutrition insights section if nutritional analysis was enabled
-                    if (preferences.extract_nutrition) {
-                        nutritionInsights.classList.remove('hidden');
-                        loadNutritionInsights(preferences.campus);
-                    }
+                    // Always show nutrition insights section since nutritional analysis is always enabled
+                    nutritionInsights.classList.remove('hidden');
+                    loadNutritionInsights(preferences.campus);
 
                 } catch (error) {
                     clearInterval(progressInterval);

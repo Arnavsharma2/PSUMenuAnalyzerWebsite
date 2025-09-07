@@ -1068,11 +1068,20 @@ def analyze():
         if not data:
             return jsonify({"error": "No data provided"}), 400
         
+        # Define available campuses
+        AVAILABLE_CAMPUSES = {
+            'altoona-port-sky', 'beaver-brodhead', 'behrend-brunos', 'behrend-dobbins',
+            'berks-tullys', 'brandywine-blue-apple', 'greater-allegheny-cafe-metro',
+            'harrisburg-stacks', 'harrisburg-outpost', 'hazleton-highacres',
+            'mont-alto-mill', 'up-east-findlay', 'up-north-warnock', 'up-pollock',
+            'up-south-redifer', 'up-west-waring'
+        }
+        
         # Validate campus parameter
         campus = data.get('campus', 'altoona-port-sky')
-        if campus not in CAMPUS_URLS:
-            print(f"ERROR: Invalid campus '{campus}'. Available campuses: {list(CAMPUS_URLS.keys())}")
-            return jsonify({"error": f"Invalid campus '{campus}'. Available campuses: {list(CAMPUS_URLS.keys())}"}), 400
+        if campus not in AVAILABLE_CAMPUSES:
+            print(f"ERROR: Invalid campus '{campus}'. Available campuses: {sorted(AVAILABLE_CAMPUSES)}")
+            return jsonify({"error": f"Invalid campus '{campus}'. Available campuses: {sorted(AVAILABLE_CAMPUSES)}"}), 400
         
         # Handle both old format (individual params) and new format (preferences object)
         if 'preferences' in data:
@@ -1290,6 +1299,6 @@ def clear_cache(campus):
         return jsonify({"error": "Failed to clear cache"}), 500
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 5001))
+    port = int(os.getenv('PORT', 5002))
     app.run(host='0.0.0.0', port=port, debug=True)
 

@@ -635,6 +635,7 @@ class MenuAnalyzer:
                 print(f"Error in run_analysis: {e}")
                 import traceback
                 traceback.print_exc()
+            print(f"Falling back to fallback data due to error: {e}")
             return self.get_fallback_data()
 
     def analyze_menu_with_gemini(self, daily_menu: Dict[str, Dict[str, str]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
@@ -792,6 +793,8 @@ class MenuAnalyzer:
                 except Exception as e:
                     if self.debug:
                         print(f"Error loading nutrition data for {item}: {e}")
+                        import traceback
+                        traceback.print_exc()
             
             # If no nutritional data available, fall back to keyword-based analysis
             if not has_nutrition_data:
@@ -896,6 +899,11 @@ def analyze():
         print("Running analysis...")
         recommendations = analyzer.run_analysis()
         print(f"Analysis complete. Returning recommendations: {recommendations}")
+        
+        # Ensure recommendations is in the correct format
+        if not isinstance(recommendations, dict):
+            print(f"Warning: recommendations is not a dict: {type(recommendations)}")
+            recommendations = {"error": "Invalid analysis results"}
         
         return jsonify(recommendations)
         

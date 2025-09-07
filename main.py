@@ -849,14 +849,26 @@ def analyze():
         if not data:
             return jsonify({"error": "No data provided"}), 400
         
-        # Simple validation
-        campus = data.get('campus', 'altoona-port-sky')
-        vegetarian = data.get('vegetarian', False)
-        vegan = data.get('vegan', False)
-        exclude_beef = data.get('exclude_beef', False)
-        exclude_pork = data.get('exclude_pork', False)
-        prioritize_protein = data.get('prioritize_protein', False)
-        extract_nutrition = True  # Always enabled
+        # Handle both old format (individual params) and new format (preferences object)
+        if 'preferences' in data:
+            # New format with preferences object
+            preferences = data['preferences']
+            campus = data.get('campus', 'altoona-port-sky')
+            vegetarian = preferences.get('vegetarian', False)
+            vegan = preferences.get('vegan', False)
+            exclude_beef = preferences.get('exclude_beef', False)
+            exclude_pork = preferences.get('exclude_pork', False)
+            prioritize_protein = preferences.get('prioritize_protein', False)
+            extract_nutrition = preferences.get('extract_nutrition', True)
+        else:
+            # Old format with individual parameters
+            campus = data.get('campus', 'altoona-port-sky')
+            vegetarian = data.get('vegetarian', False)
+            vegan = data.get('vegan', False)
+            exclude_beef = data.get('exclude_beef', False)
+            exclude_pork = data.get('exclude_pork', False)
+            prioritize_protein = data.get('prioritize_protein', False)
+            extract_nutrition = data.get('extract_nutrition', True)
         
         print(f"Parsed parameters - campus: {campus}, vegetarian: {vegetarian}, vegan: {vegan}")
         

@@ -111,6 +111,34 @@
         .nutrition-high { background-color: #dcfce7; color: #166534; }
         .nutrition-medium { background-color: #fef3c7; color: #92400e; }
         .nutrition-low { background-color: #fee2e2; color: #991b1b; }
+        .protein-badge {
+            background-color: #dbeafe;
+            color: #1e40af;
+            font-weight: 500;
+            font-size: 0.875rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 9999px;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+        .cyo-badge {
+            background-color: #fef3c7;
+            color: #92400e;
+            font-weight: 600;
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 9999px;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            border: 2px solid #f59e0b;
+        }
+        .customizable-macro {
+            background-color: #f3f4f6;
+            color: #6b7280;
+            font-style: italic;
+        }
     </style>
 </head>
 <body class="antialiased text-gray-800 p-4 sm:p-6 md:p-8">
@@ -251,6 +279,11 @@
                         Analyze Today's Menu
                     </button>
                 </div>
+            </div>
+
+            <!-- Macro Database Status Section -->
+            <div id="macro-database-status" class="mb-8">
+                <!-- Macro database status will be loaded here -->
             </div>
 
             <!-- Nutritional Insights Section -->
@@ -425,7 +458,10 @@
 
             // Load saved preferences
             loadPreferences();
-
+            
+            // Load macro database status
+            loadMacroDatabaseStatus();
+            
             // Logic to disable beef/pork toggles if vegetarian or vegan is selected
             function updateToggleStates() {
                 const isVegetarian = vegetarianToggle.checked;
@@ -514,26 +550,21 @@
             function showFallbackResults() {
                 const fallbackData = {
                     "Breakfast": [
-                        ["Scrambled Eggs", 75, "High protein, good for breakfast", "#"],
-                        ["Oatmeal", 70, "High fiber, heart healthy", "#"],
-                        ["Greek Yogurt", 65, "High protein, probiotics", "#"],
-                        ["Fresh Fruit", 60, "Natural vitamins and fiber", "#"],
-                        ["Whole Grain Toast", 55, "Complex carbohydrates", "#"]
+                        ["Scrambled Eggs", 75, "High protein (15g protein), 200 calories, 2g carbs, 12g fat - good for breakfast", "#"],
+                        ["Oatmeal", 70, "High fiber, heart healthy (5g protein), 150 calories, 27g carbs, 3g fat", "#"],
+                        ["Greek Yogurt", 65, "High protein (12g protein), probiotics, 100 calories, 6g carbs, 0g fat", "#"],
+                        ["Fresh Fruit", 60, "Natural vitamins and fiber (2g protein), 80 calories, 20g carbs, 0g fat", "#"],
+                        ["Whole Grain Toast", 55, "Complex carbohydrates (4g protein), 120 calories, 22g carbs, 2g fat", "#"]
                     ],
                     "Lunch": [
-                        ["Grilled Chicken Salad", 80, "High protein, low calorie", "#"],
-                        ["Salmon Fillet", 75, "Omega-3 fatty acids, high protein", "#"],
-                        ["Quinoa Bowl", 70, "Complete protein, high fiber", "#"],
-                        ["Turkey Sandwich", 65, "Lean protein, balanced meal", "#"],
-                        ["Vegetable Soup", 60, "Low calorie, high nutrients", "#"]
+                        ["Grilled Chicken Salad", 80, "High protein (25g protein), low calorie, 300 calories, 8g carbs, 12g fat", "#"],
+                        ["Salmon Fillet", 75, "Omega-3 fatty acids, high protein (28g protein), 350 calories, 0g carbs, 18g fat", "#"],
+                        ["CYO Salad Bowl", 85, "Create Your Own - highly customizable for health, protein content fully customizable, calorie content fully customizable, fat content fully customizable, full control over ingredients and preparation", "#"],
+                        ["Quinoa Bowl", 70, "Complete protein (8g protein), high fiber, 250 calories, 40g carbs, 4g fat", "#"],
+                        ["Turkey Sandwich", 65, "Lean protein (18g protein), balanced meal, 400 calories, 35g carbs, 15g fat", "#"],
+                        ["Vegetable Soup", 60, "Low calorie, high nutrients (6g protein), 120 calories, 15g carbs, 2g fat", "#"]
                     ],
-                    "Dinner": [
-                        ["Baked Salmon", 85, "High protein, omega-3s", "#"],
-                        ["Grilled Chicken Breast", 80, "Lean protein, low fat", "#"],
-                        ["Vegetable Stir Fry", 75, "High fiber, vitamins", "#"],
-                        ["Brown Rice Bowl", 70, "Complex carbs, fiber", "#"],
-                        ["Roasted Vegetables", 65, "Antioxidants, vitamins", "#"]
-                    ]
+                    "Dinner": []  // Simulate missing dinner to test functionality
                 };
                 
                 displayResults(fallbackData);
@@ -585,6 +616,84 @@
                             "Salmon Fillet": {"calories": 300, "protein": 28, "carbs": 0, "fat": 18}
                         }
                     });
+                }
+            }
+
+            // Load daily macro database status
+            async function loadMacroDatabaseStatus() {
+                try {
+                    const response = await fetch('/api/macro-database/status');
+                    if (response.ok) {
+                        const status = await response.json();
+                        displayMacroDatabaseStatus(status);
+                    }
+                } catch (error) {
+                    console.error('Error loading macro database status:', error);
+                }
+            }
+
+            // Display macro database status
+            function displayMacroDatabaseStatus(status) {
+                const statusContainer = document.getElementById('macro-database-status');
+                if (!statusContainer) return;
+
+                const today = new Date().toISOString().split('T')[0];
+                let statusHtml = `
+                    <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6 rounded-r-lg">
+                        <h3 class="text-sm font-medium text-blue-800 mb-2">Daily Macro Database Status - ${today}</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                `;
+
+                for (const [campus, data] of Object.entries(status)) {
+                    const campusName = campus.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    const statusColor = data.has_data ? 'text-green-600' : 'text-red-600';
+                    const statusText = data.has_data ? `${data.total_foods} foods logged` : 'No data';
+                    
+                    statusHtml += `
+                        <div class="bg-white p-3 rounded-lg shadow-sm">
+                            <div class="font-medium text-gray-800">${campusName}</div>
+                            <div class="text-sm ${statusColor}">${statusText}</div>
+                            ${data.last_updated ? `<div class="text-xs text-gray-500">Updated: ${new Date(data.last_updated).toLocaleTimeString()}</div>` : ''}
+                        </div>
+                    `;
+                }
+
+                statusHtml += `
+                        </div>
+                        <div class="mt-3 flex gap-2">
+                            <button onclick="downloadDailyMacros('${campusSelect.value}')" class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded">
+                                Download Daily Macros
+                            </button>
+                            <button onclick="loadMacroDatabaseStatus()" class="bg-gray-600 hover:bg-gray-700 text-white text-xs px-3 py-1 rounded">
+                                Refresh Status
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+                statusContainer.innerHTML = statusHtml;
+            }
+
+            // Download daily macros
+            async function downloadDailyMacros(campus) {
+                try {
+                    const response = await fetch(`/api/daily-macros/${campus}/download`);
+                    if (response.ok) {
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `${campus}_daily_macros.csv`;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                    } else {
+                        alert('No daily macro data available for download');
+                    }
+                } catch (error) {
+                    console.error('Error downloading daily macros:', error);
+                    alert('Error downloading daily macro data');
                 }
             }
 
@@ -642,7 +751,10 @@
                 resultsContainer.innerHTML = ''; // Clear previous results or loader
                 const meals = ['Breakfast', 'Lunch', 'Dinner'];
 
-                if (Object.values(data).every(meal => !meal || meal.length === 0)) {
+                // Check if any meals have items
+                const hasAnyItems = meals.some(meal => data[meal] && data[meal].length > 0);
+                
+                if (!hasAnyItems) {
                     resultsContainer.innerHTML = `
                         <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-4 rounded-lg shadow-sm fade-in" role="alert">
                             <p class="font-bold">No Recommendations Found</p>
@@ -656,20 +768,48 @@
                     const mealEl = document.createElement('div');
                     mealEl.className = 'bg-white rounded-lg shadow-md p-6 fade-in';
                     
-                    let itemsHtml = '<p class="text-gray-500">No items found for this meal.</p>';
-                    if (items && items.length > 0) {
+                    let itemsHtml = '';
+                    if (!items || items.length === 0) {
+                        // Meal is not offered today
+                        itemsHtml = `
+                            <div class="text-center py-8">
+                                <div class="text-gray-400 text-4xl mb-2">🍽️</div>
+                                <p class="text-gray-500 font-medium">${mealName} Not Offered Today</p>
+                                <p class="text-sm text-gray-400 mt-1">This meal is not available at this location today</p>
+                            </div>
+                        `;
+                    } else {
                         itemsHtml = items.map((item, index) => {
                             const [food, score, reason, url] = item;
                             const scoreColor = score >= 80 ? 'bg-green-100 text-green-800' : score >= 60 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
                             
                             // Parse nutritional information from reason if available
                             const nutritionBadges = parseNutritionBadges(reason);
+                            const macroContent = extractMacroContent(reason);
+                            const isCYO = reason.toLowerCase().includes('create your own') || reason.toLowerCase().includes('cyo');
                             
                             return `
                                 <div class="py-4 ${index < items.length - 1 ? 'border-b border-gray-200' : ''}">
                                     <div class="flex items-start justify-between">
                                         <div class="flex-1">
-                                            <h4 class="text-lg font-semibold text-gray-800">${food}</h4>
+                                            <div class="flex items-center gap-3 mb-2">
+                                                <h4 class="text-lg font-semibold text-gray-800">${food}</h4>
+                                                ${isCYO ? '<span class="cyo-badge">CYO</span>' : ''}
+                                            </div>
+                                            <div class="flex flex-wrap gap-2 mb-2">
+                                                <span class="text-xs font-medium px-2 py-1 rounded-full ${macroContent.calories === 'Customizable' ? 'customizable-macro' : 'bg-red-100 text-red-800'}">
+                                                    ${macroContent.calories} cal
+                                                </span>
+                                                <span class="text-xs font-medium px-2 py-1 rounded-full ${macroContent.protein === 'Customizable' ? 'customizable-macro' : 'bg-blue-100 text-blue-800'}">
+                                                    ${macroContent.protein} protein
+                                                </span>
+                                                <span class="text-xs font-medium px-2 py-1 rounded-full ${macroContent.carbs === 'Customizable' ? 'customizable-macro' : 'bg-green-100 text-green-800'}">
+                                                    ${macroContent.carbs} carbs
+                                                </span>
+                                                <span class="text-xs font-medium px-2 py-1 rounded-full ${macroContent.fat === 'Customizable' ? 'customizable-macro' : 'bg-yellow-100 text-yellow-800'}">
+                                                    ${macroContent.fat} fat
+                                                </span>
+                                            </div>
                                             <p class="text-sm text-gray-500 mt-1">
                                                 <strong class="font-medium">Analysis:</strong> ${reason || 'A standard, balanced option.'}
                                             </p>
@@ -723,6 +863,71 @@
                 }
                 
                 return badges.join('');
+            }
+
+            // Extract protein content from reason text
+            function extractProteinContent(reason) {
+                if (!reason) return 'N/A';
+                
+                // Look for protein content patterns like "Xg protein", "X grams protein", etc.
+                const proteinMatch = reason.match(/(\d+(?:\.\d+)?)\s*(?:g|grams?)\s*protein/i);
+                if (proteinMatch) {
+                    return `${proteinMatch[1]}g`;
+                }
+                
+                // Look for protein content in parentheses like "(Xg protein)"
+                const parenMatch = reason.match(/\((\d+(?:\.\d+)?)\s*(?:g|grams?)\s*protein\)/i);
+                if (parenMatch) {
+                    return `${parenMatch[1]}g`;
+                }
+                
+                return 'N/A';
+            }
+
+            // Extract all macro content from reason text
+            function extractMacroContent(reason) {
+                if (!reason) return { calories: 'N/A', protein: 'N/A', carbs: 'N/A', fat: 'N/A' };
+                
+                const macros = { calories: 'N/A', protein: 'N/A', carbs: 'N/A', fat: 'N/A' };
+                
+                // Check if this is a CYO item
+                const isCYO = reason.toLowerCase().includes('create your own') || reason.toLowerCase().includes('cyo');
+                
+                if (isCYO) {
+                    // For CYO items, show customizable status
+                    return { 
+                        calories: 'Customizable', 
+                        protein: 'Customizable', 
+                        carbs: 'Customizable', 
+                        fat: 'Customizable' 
+                    };
+                }
+                
+                // Extract calories
+                const caloriesMatch = reason.match(/(\d+(?:\.\d+)?)\s*(?:cal|calories?)/i);
+                if (caloriesMatch) {
+                    macros.calories = caloriesMatch[1];
+                }
+                
+                // Extract protein
+                const proteinMatch = reason.match(/(\d+(?:\.\d+)?)\s*(?:g|grams?)\s*protein/i);
+                if (proteinMatch) {
+                    macros.protein = `${proteinMatch[1]}g`;
+                }
+                
+                // Extract carbs
+                const carbsMatch = reason.match(/(\d+(?:\.\d+)?)\s*(?:g|grams?)\s*(?:carbs?|carbohydrates?)/i);
+                if (carbsMatch) {
+                    macros.carbs = `${carbsMatch[1]}g`;
+                }
+                
+                // Extract fat
+                const fatMatch = reason.match(/(\d+(?:\.\d+)?)\s*(?:g|grams?)\s*fat/i);
+                if (fatMatch) {
+                    macros.fat = `${fatMatch[1]}g`;
+                }
+                
+                return macros;
             }
 
             // Add keyboard shortcuts

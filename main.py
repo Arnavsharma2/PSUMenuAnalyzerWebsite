@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
 import requests
 from bs4 import BeautifulSoup
@@ -178,22 +178,48 @@ class NutritionalDataExtractor:
         # Special handling for CYO items
         if is_cyo:
             # CYO items get a base score that reflects their potential for healthy customization
-            score = 70  # Higher base score for CYO items
-            reasons.append("Customizable - can be made healthy")
+            score = 75  # Higher base score for CYO items due to customization potential
+            reasons.append("Create Your Own - highly customizable for health")
             
-            # For CYO items, we're more lenient with protein scoring since it depends on user choices
+            # For CYO items, we're more lenient with all macro scoring since it depends on user choices
             protein = nutrition_data.get('protein', 0)
+            calories = nutrition_data.get('calories', 0)
+            fat = nutrition_data.get('fat', 0)
+            
+            # Only apply scoring if we have actual data (not just estimates)
             if protein > 0:  # If there's any protein data, use it
-                if protein >= 20:
+                if protein >= 25:
+                    score += 20
+                    reasons.append("Excellent protein potential")
+                elif protein >= 15:
                     score += 15
-                    reasons.append("Good protein content")
-                elif protein >= 10:
+                    reasons.append("Good protein potential")
+                elif protein >= 8:
                     score += 10
-                    reasons.append("Moderate protein content")
+                    reasons.append("Moderate protein potential")
             else:
-                # No protein data for CYO - don't penalize heavily
+                # No protein data for CYO - emphasize customization potential
+                score += 10
+                reasons.append("Protein content fully customizable")
+            
+            # For CYO, emphasize the healthy customization potential
+            if calories > 0 and calories <= 300:
+                score += 10
+                reasons.append("Low-calorie base for healthy building")
+            elif calories == 0:
+                score += 15
+                reasons.append("Calorie content fully customizable")
+            
+            if fat > 0 and fat <= 10:
                 score += 5
-                reasons.append("Protein content depends on customization")
+                reasons.append("Low-fat base for healthy building")
+            elif fat == 0:
+                score += 10
+                reasons.append("Fat content fully customizable")
+            
+            # Add bonus for CYO flexibility
+            score += 5
+            reasons.append("Full control over ingredients and preparation")
         else:
             # Regular items use standard protein scoring
             protein = nutrition_data.get('protein', 0)
@@ -283,6 +309,118 @@ class NutritionalDataExtractor:
         
         score = max(0, min(100, score))
         return score, "; ".join(reasons) if reasons else "Standard nutritional profile"
+
+# --- Daily Macro Database Manager ---
+class DailyMacroDatabase:
+    def __init__(self, debug=False):
+        self.debug = debug
+        self.export_dir = "exports"
+        self.macro_db_dir = "macro_database"
+        os.makedirs(self.export_dir, exist_ok=True)
+        os.makedirs(self.macro_db_dir, exist_ok=True)
+    
+    def get_daily_macro_file(self, campus: str, date: str = None) -> str:
+        """Get the daily macro database file path for a campus and date"""
+        if date is None:
+            date = datetime.now().strftime('%Y%m%d')
+        return os.path.join(self.macro_db_dir, f"{campus}_{date}_macros.csv")
+    
+    def load_daily_macros(self, campus: str, date: str = None) -> Dict[str, Dict[str, float]]:
+        """Load daily macro data for a campus from CSV"""
+        macro_file = self.get_daily_macro_file(campus, date)
+        macros = {}
+        
+        if os.path.exists(macro_file):
+            try:
+                df = pd.read_csv(macro_file)
+                for _, row in df.iterrows():
+                    food_name = row['food_name']
+                    macros[food_name] = {
+                        'calories': float(row.get('calories', 0)),
+                        'protein': float(row.get('protein', 0)),
+                        'carbs': float(row.get('carbs', 0)),
+                        'fat': float(row.get('fat', 0)),
+                        'fiber': float(row.get('fiber', 0)),
+                        'sugar': float(row.get('sugar', 0)),
+                        'sodium': float(row.get('sodium', 0)),
+                        'saturated_fat': float(row.get('saturated_fat', 0)),
+                        'cholesterol': float(row.get('cholesterol', 0))
+                    }
+                if self.debug:
+                    print(f"Loaded {len(macros)} macro entries for {campus} on {date}")
+            except Exception as e:
+                if self.debug:
+                    print(f"Error loading daily macros: {e}")
+        
+        return macros
+    
+    def save_daily_macros(self, campus: str, macros: Dict[str, Dict[str, float]], date: str = None) -> bool:
+        """Save daily macro data to CSV"""
+        if date is None:
+            date = datetime.now().strftime('%Y%m%d')
+        
+        macro_file = self.get_daily_macro_file(campus, date)
+        
+        try:
+            # Convert to DataFrame
+            data = []
+            for food_name, macro_data in macros.items():
+                row = {'food_name': food_name, 'campus': campus, 'date': date}
+                row.update(macro_data)
+                data.append(row)
+            
+            df = pd.DataFrame(data)
+            df.to_csv(macro_file, index=False)
+            
+            if self.debug:
+                print(f"Saved {len(macros)} macro entries to {macro_file}")
+            return True
+            
+        except Exception as e:
+            if self.debug:
+                print(f"Error saving daily macros: {e}")
+            return False
+    
+    def update_daily_macros(self, campus: str, new_macros: Dict[str, Dict[str, float]], date: str = None) -> bool:
+        """Update daily macro database with new items, preserving existing ones"""
+        if date is None:
+            date = datetime.now().strftime('%Y%m%d')
+        
+        # Load existing macros
+        existing_macros = self.load_daily_macros(campus, date)
+        
+        # Update with new macros (new items will be added, existing ones updated)
+        existing_macros.update(new_macros)
+        
+        # Save updated macros
+        return self.save_daily_macros(campus, existing_macros, date)
+    
+    def get_campus_macro_summary(self, campus: str, date: str = None) -> Dict[str, any]:
+        """Get summary statistics for campus macros on a given date"""
+        macros = self.load_daily_macros(campus, date)
+        
+        if not macros:
+            return {"error": "No macro data found for this campus and date"}
+        
+        # Calculate statistics
+        calories = [m['calories'] for m in macros.values()]
+        proteins = [m['protein'] for m in macros.values()]
+        carbs = [m['carbs'] for m in macros.values()]
+        fats = [m['fat'] for m in macros.values()]
+        
+        return {
+            "total_foods": len(macros),
+            "avg_calories": sum(calories) / len(calories) if calories else 0,
+            "avg_protein": sum(proteins) / len(proteins) if proteins else 0,
+            "avg_carbs": sum(carbs) / len(carbs) if carbs else 0,
+            "avg_fat": sum(fats) / len(fats) if fats else 0,
+            "high_protein_foods": sorted([(name, data['protein']) for name, data in macros.items()], 
+                                       key=lambda x: x[1], reverse=True)[:5],
+            "low_calorie_foods": sorted([(name, data['calories']) for name, data in macros.items()], 
+                                      key=lambda x: x[1])[:5],
+            "date": date,
+            "campus": campus
+        }
 
 # --- CSV Export Manager ---
 class CSVExportManager:
@@ -397,9 +535,10 @@ class MenuAnalyzer:
         self.prioritize_protein = prioritize_protein
         self.extract_nutrition = extract_nutrition
         
-        # Initialize nutritional data extractor and CSV manager
+        # Initialize nutritional data extractor, CSV manager, and daily macro database
         self.nutrition_extractor = NutritionalDataExtractor(debug=debug)
         self.csv_manager = CSVExportManager(debug=debug)
+        self.macro_db = DailyMacroDatabase(debug=debug)
         
         # Use the passed parameter or fall back to environment variable
         self.gemini_api_key = gemini_api_key or os.getenv('GEMINI_API_KEY')
@@ -763,13 +902,18 @@ class MenuAnalyzer:
 
     def analyze_menu_local(self, daily_menu: Dict[str, Dict[str, str]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
         results = {}
-        for meal, items in daily_menu.items():
-            if not items:  # Handle empty meals
-                results[meal] = []
-            else:
-                analyzed_items = self.analyze_food_health_local_list(items, meal)
+        expected_meals = ['Breakfast', 'Lunch', 'Dinner']
+        
+        for meal in expected_meals:
+            if meal in daily_menu and daily_menu[meal]:
+                # Meal is available and has items
+                analyzed_items = self.analyze_food_health_local_list(daily_menu[meal], meal)
                 analyzed_items.sort(key=lambda x: x[1], reverse=True)
                 results[meal] = analyzed_items
+            else:
+                # Meal is not available or has no items
+                results[meal] = []
+        
         return results
 
     def analyze_food_health_local_list(self, food_items: Dict[str, str], meal: str = "") -> List[Tuple[str, int, str, str]]:
@@ -780,10 +924,15 @@ class MenuAnalyzer:
         protein_weights = {'excellent': 40, 'good': 30, 'moderate': 15} if self.prioritize_protein else {'excellent': 30, 'good': 20, 'moderate': 10}
         prep_weights = {'excellent': 10, 'good': 5, 'poor': -15} if self.prioritize_protein else {'excellent': 20, 'good': 10, 'poor': -25}
 
+        # Load existing daily macros for this campus
+        daily_macros = self.macro_db.load_daily_macros(self.campus_key)
+        new_macros = {}  # Track new macros to add to database
+
         for item, url in food_items.items():
             item_lower = item.lower()
             score, reasoning = 50, []
             has_nutrition_data = False
+            nutrition_dict = {}
             
             # Try to get nutritional data if available - this is now the primary scoring method
             if self.extract_nutrition and meal:
@@ -800,6 +949,20 @@ class MenuAnalyzer:
                             score = nutrition_score
                             reasoning.append(f"Nutritional analysis: {nutrition_reason}")
                             has_nutrition_data = True
+                            
+                            # Store macro data for daily database
+                            if nutrition_dict:
+                                new_macros[item] = {
+                                    'calories': float(nutrition_dict.get('calories', 0)),
+                                    'protein': float(nutrition_dict.get('protein', 0)),
+                                    'carbs': float(nutrition_dict.get('carbs', 0)),
+                                    'fat': float(nutrition_dict.get('fat', 0)),
+                                    'fiber': float(nutrition_dict.get('fiber', 0)),
+                                    'sugar': float(nutrition_dict.get('sugar', 0)),
+                                    'sodium': float(nutrition_dict.get('sodium', 0)),
+                                    'saturated_fat': float(nutrition_dict.get('saturated_fat', 0)),
+                                    'cholesterol': float(nutrition_dict.get('cholesterol', 0))
+                                }
                             
                             if self.debug:
                                 print(f"Using nutritional data for {item}: score={nutrition_score}, reason={nutrition_reason}")
@@ -834,8 +997,30 @@ class MenuAnalyzer:
                         reasoning.append(f"Prep style bonus ({level})")
                         break
             
+            # Add macro information to reasoning if we have it
+            if nutrition_dict and any(nutrition_dict.get(key, 0) > 0 for key in ['calories', 'protein', 'carbs', 'fat']):
+                macro_info = []
+                if nutrition_dict.get('calories', 0) > 0:
+                    macro_info.append(f"{int(nutrition_dict['calories'])} calories")
+                if nutrition_dict.get('protein', 0) > 0:
+                    macro_info.append(f"{nutrition_dict['protein']}g protein")
+                if nutrition_dict.get('carbs', 0) > 0:
+                    macro_info.append(f"{nutrition_dict['carbs']}g carbs")
+                if nutrition_dict.get('fat', 0) > 0:
+                    macro_info.append(f"{nutrition_dict['fat']}g fat")
+                
+                if macro_info:
+                    reasoning.append(f"Macros: {', '.join(macro_info)}")
+            
             score = max(0, min(100, score))
             health_scores.append((item, score, ", ".join(reasoning) or "Standard option", url))
+        
+        # Update daily macro database with new items
+        if new_macros:
+            self.macro_db.update_daily_macros(self.campus_key, new_macros)
+            if self.debug:
+                print(f"Updated daily macro database with {len(new_macros)} new items")
+        
         return health_scores
 
 # --- Routes ---
@@ -988,6 +1173,61 @@ def download_nutrition_csv(campus):
     except Exception as e:
         print(f"Error downloading nutrition CSV: {e}")
         return jsonify({"error": "Failed to download nutrition data"}), 500
+
+@app.route('/api/daily-macros/<campus>')
+def get_daily_macros(campus):
+    """Get daily macro summary for a campus"""
+    try:
+        macro_db = DailyMacroDatabase(debug=True)
+        summary = macro_db.get_campus_macro_summary(campus)
+        return jsonify(summary)
+    except Exception as e:
+        print(f"Error getting daily macros: {e}")
+        return jsonify({"error": "Failed to get daily macro data"}), 500
+
+@app.route('/api/daily-macros/<campus>/download')
+def download_daily_macros(campus):
+    """Download daily macro CSV for a campus"""
+    try:
+        macro_db = DailyMacroDatabase(debug=True)
+        macro_file = macro_db.get_daily_macro_file(campus)
+        
+        if os.path.exists(macro_file):
+            return send_file(macro_file, as_attachment=True, download_name=f"{campus}_daily_macros.csv")
+        else:
+            return jsonify({"error": "No daily macro data available for download"}), 404
+    except Exception as e:
+        print(f"Error downloading daily macros: {e}")
+        return jsonify({"error": "Failed to download daily macro data"}), 500
+
+@app.route('/api/macro-database/status')
+def macro_database_status():
+    """Get status of macro database for all campuses"""
+    try:
+        macro_db = DailyMacroDatabase(debug=True)
+        today = datetime.now().strftime('%Y%m%d')
+        
+        status = {}
+        for campus in ['altoona-port-sky', 'university-park', 'hazleton', 'lehigh-valley', 'berks']:
+            macro_file = macro_db.get_daily_macro_file(campus, today)
+            if os.path.exists(macro_file):
+                macros = macro_db.load_daily_macros(campus, today)
+                status[campus] = {
+                    "has_data": True,
+                    "total_foods": len(macros),
+                    "last_updated": datetime.fromtimestamp(os.path.getmtime(macro_file)).isoformat()
+                }
+            else:
+                status[campus] = {
+                    "has_data": False,
+                    "total_foods": 0,
+                    "last_updated": None
+                }
+        
+        return jsonify(status)
+    except Exception as e:
+        print(f"Error getting macro database status: {e}")
+        return jsonify({"error": "Failed to get macro database status"}), 500
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5001))

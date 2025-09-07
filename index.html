@@ -461,7 +461,7 @@
             
             // Load macro database status
             loadMacroDatabaseStatus();
-            
+
             // Logic to disable beef/pork toggles if vegetarian or vegan is selected
             function updateToggleStates() {
                 const isVegetarian = vegetarianToggle.checked;
@@ -499,7 +499,10 @@
 
             vegetarianToggle.addEventListener('change', updateToggleStates);
             veganToggle.addEventListener('change', updateToggleStates);
-            campusSelect.addEventListener('change', () => savePreferences(getPreferences()));
+            campusSelect.addEventListener('change', () => {
+                savePreferences(getPreferences());
+                loadFrontendMacroDatabase(); // Reload macro database for new campus
+            });
             
             // Debounced analysis function
             const debouncedAnalyze = debounce(async () => {
@@ -567,6 +570,9 @@
                     "Dinner": []  // Simulate missing dinner to test functionality
                 };
                 
+                // Track macros for fallback data
+                trackFallbackMacros(fallbackData);
+                
                 displayResults(fallbackData);
                 
                 // Show a notice that this is fallback data
@@ -574,9 +580,74 @@
                 notice.className = 'bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-4 rounded-lg shadow-sm mb-4';
                 notice.innerHTML = `
                     <p class="font-bold">Demo Mode</p>
-                    <p>Backend server is not available. Showing sample recommendations.</p>
+                    <p>Backend server is not available. Showing sample recommendations with macro tracking.</p>
                 `;
                 resultsContainer.insertBefore(notice, resultsContainer.firstChild);
+            }
+
+            // Track macros for fallback data
+            function trackFallbackMacros(data) {
+                const meals = ['Breakfast', 'Lunch', 'Dinner'];
+                
+                meals.forEach(meal => {
+                    if (data[meal] && data[meal].length > 0) {
+                        data[meal].forEach(item => {
+                            const [foodName, score, reason, url] = item;
+                            const macroData = extractMacroDataFromReason(reason);
+                            if (macroData) {
+                                saveMacroToDatabase(foodName, macroData);
+                            }
+                        });
+                    }
+                });
+            }
+
+            // Extract macro data from reason text
+            function extractMacroDataFromReason(reason) {
+                if (!reason) return null;
+                
+                const macros = {
+                    calories: 0,
+                    protein: 0,
+                    carbs: 0,
+                    fat: 0,
+                    fiber: 0,
+                    sugar: 0,
+                    sodium: 0,
+                    saturated_fat: 0,
+                    cholesterol: 0
+                };
+                
+                // Extract calories
+                const caloriesMatch = reason.match(/(\d+(?:\.\d+)?)\s*(?:cal|calories?)/i);
+                if (caloriesMatch) {
+                    macros.calories = parseFloat(caloriesMatch[1]);
+                }
+                
+                // Extract protein
+                const proteinMatch = reason.match(/(\d+(?:\.\d+)?)\s*(?:g|grams?)\s*protein/i);
+                if (proteinMatch) {
+                    macros.protein = parseFloat(proteinMatch[1]);
+                }
+                
+                // Extract carbs
+                const carbsMatch = reason.match(/(\d+(?:\.\d+)?)\s*(?:g|grams?)\s*(?:carbs?|carbohydrates?)/i);
+                if (carbsMatch) {
+                    macros.carbs = parseFloat(carbsMatch[1]);
+                }
+                
+                // Extract fat
+                const fatMatch = reason.match(/(\d+(?:\.\d+)?)\s*(?:g|grams?)\s*fat/i);
+                if (fatMatch) {
+                    macros.fat = parseFloat(fatMatch[1]);
+                }
+                
+                // Only return if we have some macro data
+                if (macros.calories > 0 || macros.protein > 0 || macros.carbs > 0 || macros.fat > 0) {
+                    return macros;
+                }
+                
+                return null;
             }
 
             // Load nutrition insights
@@ -619,6 +690,9 @@
                 }
             }
 
+            // Frontend-only macro tracking system
+            let dailyMacroDatabase = {};
+
             // Load daily macro database status
             async function loadMacroDatabaseStatus() {
                 try {
@@ -626,10 +700,85 @@
                     if (response.ok) {
                         const status = await response.json();
                         displayMacroDatabaseStatus(status);
+                    } else {
+                        // Fallback to frontend-only tracking
+                        loadFrontendMacroDatabase();
                     }
                 } catch (error) {
                     console.error('Error loading macro database status:', error);
+                    // Fallback to frontend-only tracking
+                    loadFrontendMacroDatabase();
                 }
+            }
+
+            // Load frontend macro database from localStorage
+            function loadFrontendMacroDatabase() {
+                const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
+                const campus = campusSelect.value;
+                const key = `macro_database_${campus}_${today}`;
+                
+                const stored = localStorage.getItem(key);
+                if (stored) {
+                    dailyMacroDatabase = JSON.parse(stored);
+                } else {
+                    dailyMacroDatabase = {};
+                }
+                
+                displayFrontendMacroDatabaseStatus();
+            }
+
+            // Save macro data to frontend database
+            function saveMacroToDatabase(foodName, macroData) {
+                const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
+                const campus = campusSelect.value;
+                const key = `macro_database_${campus}_${today}`;
+                
+                // Load existing data
+                const stored = localStorage.getItem(key);
+                if (stored) {
+                    dailyMacroDatabase = JSON.parse(stored);
+                }
+                
+                // Add new macro data
+                dailyMacroDatabase[foodName] = macroData;
+                
+                // Save back to localStorage
+                localStorage.setItem(key, JSON.stringify(dailyMacroDatabase));
+                
+                console.log(`Saved macro data for ${foodName}:`, macroData);
+            }
+
+            // Display frontend macro database status
+            function displayFrontendMacroDatabaseStatus() {
+                const statusContainer = document.getElementById('macro-database-status');
+                if (!statusContainer) return;
+
+                const today = new Date().toISOString().split('T')[0];
+                const campus = campusSelect.value;
+                const totalFoods = Object.keys(dailyMacroDatabase).length;
+                
+                const statusHtml = `
+                    <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6 rounded-r-lg">
+                        <h3 class="text-sm font-medium text-blue-800 mb-2">Daily Macro Database Status - ${today}</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                            <div class="bg-white p-3 rounded-lg shadow-sm">
+                                <div class="font-medium text-gray-800">${campus.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}</div>
+                                <div class="text-sm ${totalFoods > 0 ? 'text-green-600' : 'text-red-600'}">${totalFoods} foods logged</div>
+                                <div class="text-xs text-gray-500">Frontend tracking</div>
+                            </div>
+                        </div>
+                        <div class="mt-3 flex gap-2">
+                            <button onclick="downloadFrontendMacros()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3 py-1 rounded">
+                                Download Daily Macros
+                            </button>
+                            <button onclick="loadFrontendMacroDatabase()" class="bg-gray-600 hover:bg-gray-700 text-white text-xs px-3 py-1 rounded">
+                                Refresh Status
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+                statusContainer.innerHTML = statusHtml;
             }
 
             // Display macro database status
@@ -689,12 +838,57 @@
                         window.URL.revokeObjectURL(url);
                         document.body.removeChild(a);
                     } else {
-                        alert('No daily macro data available for download');
+                        // Fallback to frontend download
+                        downloadFrontendMacros();
                     }
                 } catch (error) {
                     console.error('Error downloading daily macros:', error);
-                    alert('Error downloading daily macro data');
+                    // Fallback to frontend download
+                    downloadFrontendMacros();
                 }
+            }
+
+            // Download frontend macro data as CSV
+            function downloadFrontendMacros() {
+                const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
+                const campus = campusSelect.value;
+                
+                if (Object.keys(dailyMacroDatabase).length === 0) {
+                    alert('No macro data available for download');
+                    return;
+                }
+                
+                // Convert to CSV format
+                let csvContent = 'food_name,campus,date,calories,protein,carbs,fat,fiber,sugar,sodium,saturated_fat,cholesterol\n';
+                
+                for (const [foodName, macroData] of Object.entries(dailyMacroDatabase)) {
+                    const row = [
+                        foodName,
+                        campus,
+                        today,
+                        macroData.calories || 0,
+                        macroData.protein || 0,
+                        macroData.carbs || 0,
+                        macroData.fat || 0,
+                        macroData.fiber || 0,
+                        macroData.sugar || 0,
+                        macroData.sodium || 0,
+                        macroData.saturated_fat || 0,
+                        macroData.cholesterol || 0
+                    ].join(',');
+                    csvContent += row + '\n';
+                }
+                
+                // Create and download file
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${campus}_daily_macros_${today}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
             }
 
             // Display nutrition insights
@@ -793,7 +987,7 @@
                                     <div class="flex items-start justify-between">
                                         <div class="flex-1">
                                             <div class="flex items-center gap-3 mb-2">
-                                                <h4 class="text-lg font-semibold text-gray-800">${food}</h4>
+                                            <h4 class="text-lg font-semibold text-gray-800">${food}</h4>
                                                 ${isCYO ? '<span class="cyo-badge">CYO</span>' : ''}
                                             </div>
                                             <div class="flex flex-wrap gap-2 mb-2">

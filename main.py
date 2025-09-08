@@ -487,16 +487,20 @@ class MenuAnalyzer:
             # First, apply the hard filters based on user preferences
             filtered_items = self.apply_hard_filters(items)
             
-            # Check for CYO items in top 5 and add extra recommendations
-            top_5 = filtered_items[:5]
-            cyo_count = sum(1 for item in top_5 if 'cyo' in item[0].lower() or 'create your own' in item[0].lower())
-            
-            if cyo_count > 0:
-                # Add extra items for each CYO item found
-                extra_items = filtered_items[5:5+cyo_count]  # Get next items after top 5
-                final_results[meal] = top_5 + extra_items
+            # Categorize items and ensure minimum meal counts
+            if meal in ['Lunch', 'Dinner']:
+                final_results[meal] = self._ensure_minimum_meals(filtered_items, min_meals=3)
             else:
-                final_results[meal] = top_5
+                # For breakfast, just add CYO extras if needed
+                top_5 = filtered_items[:5]
+                cyo_count = sum(1 for item in top_5 if 'cyo' in item[0].lower() or 'create your own' in item[0].lower())
+                
+                if cyo_count > 0:
+                    # Add extra items for each CYO item found
+                    extra_items = filtered_items[5:5+cyo_count]  # Get next items after top 5
+                    final_results[meal] = top_5 + extra_items
+                else:
+                    final_results[meal] = top_5
         
         # Generate nutrition CSV if requested
         if self.extract_nutrition:
@@ -583,7 +587,17 @@ class MenuAnalyzer:
                 continue
                 
             enhanced_items = []
-            for food_name, score, reason, url in items:
+            for item in items:
+                # Handle both old format (4 elements) and new format (6 elements)
+                if len(item) == 6:
+                    food_name, score, reason, url, nutrition, category = item
+                elif len(item) == 5:
+                    food_name, score, reason, url, nutrition = item
+                    category = "meal"
+                else:
+                    food_name, score, reason, url = item
+                    nutrition = {}
+                    category = "meal"
                 nutrition_data = None
                 
                 # Try to get nutrition data from the daily menu
@@ -600,8 +614,8 @@ class MenuAnalyzer:
                     # Create empty nutrition data if no URL
                     nutrition_data = self.nutrition_extractor._get_empty_nutrition_data('#')
                 
-                # Add nutrition data as the 5th element in the tuple
-                enhanced_items.append((food_name, score, reason, url, nutrition_data))
+                # Add nutrition data and category to the tuple
+                enhanced_items.append((food_name, score, reason, url, nutrition_data, category))
             
             enhanced_results[meal] = enhanced_items
         
@@ -712,7 +726,14 @@ class MenuAnalyzer:
                 # Fallback to keyword-based scoring if no nutrition data
                 score, reasoning = self._fallback_keyword_scoring(item)
             
-            health_scores.append((item, score, reasoning, url))
+            # Add category to the tuple
+            if nutrition_data and nutrition_data.get('calories', 0) > 0:
+                calories = nutrition_data.get('calories', 0)
+                category = "snack/addon" if calories < 200 else "meal"
+            else:
+                category = "meal"  # Default to meal if no nutrition data
+            
+            health_scores.append((item, score, reasoning, url, nutrition_data, category))
         
         return health_scores
     
@@ -836,6 +857,53 @@ class MenuAnalyzer:
         
         score = max(0, min(100, score))
         return score, ", ".join(reasoning) or "Standard option (keyword-based)"
+    
+    def _categorize_item(self, item_tuple: Tuple[str, int, str, str, Dict]) -> Tuple[str, int, str, str, Dict, str]:
+        """Categorize an item as meal or snack/addon based on calories"""
+        if len(item_tuple) == 5:
+            food_name, score, reason, url, nutrition = item_tuple
+            calories = nutrition.get('calories', 0)
+            
+            # Items under 200 calories are considered snacks/addons
+            if calories > 0 and calories < 200:
+                category = "snack/addon"
+            else:
+                category = "meal"
+            
+            return (food_name, score, reason, url, nutrition, category)
+        else:
+            # Fallback for items without nutrition data
+            return item_tuple + ("meal",)
+    
+    def _ensure_minimum_meals(self, items: List[Tuple], min_meals: int = 3) -> List[Tuple]:
+        """Ensure we have at least min_meals proper meals, with snacks/addons after"""
+        if not items:
+            return items
+        
+        # Items should already be categorized from health scoring
+        # Separate meals and snacks based on existing category
+        meals = [item for item in items if len(item) >= 6 and item[5] == "meal"]
+        snacks = [item for item in items if len(item) >= 6 and item[5] == "snack/addon"]
+        
+        # If we have enough meals, return top meals + some snacks
+        if len(meals) >= min_meals:
+            # Take top meals first, then add some snacks
+            result = meals[:min_meals]
+            # Add up to 2 snacks if available
+            if snacks:
+                result.extend(snacks[:2])
+            return result
+        else:
+            # If not enough meals, take all meals + top snacks to reach min_meals
+            result = meals[:]
+            needed = min_meals - len(meals)
+            if snacks and needed > 0:
+                result.extend(snacks[:needed])
+            # If still not enough, add more snacks to reach at least min_meals total
+            if len(result) < min_meals and len(snacks) > needed:
+                additional_needed = min_meals - len(result)
+                result.extend(snacks[needed:needed + additional_needed])
+            return result
 
 # --- Routes ---
 @app.route('/')

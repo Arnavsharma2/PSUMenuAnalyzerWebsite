@@ -1,5 +1,6 @@
 Flask
 Flask-Cors
+Flask-SocketIO
 requests
 beautifulsoup4
 gunicorn

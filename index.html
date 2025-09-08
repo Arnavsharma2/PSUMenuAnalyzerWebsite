@@ -341,6 +341,7 @@
         </footer>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <script>
         // Main application logic
         document.addEventListener('DOMContentLoaded', function () {
@@ -351,6 +352,16 @@
             const veganToggle = document.getElementById('vegan');
             const beefPref = document.getElementById('beef-pref');
             const porkPref = document.getElementById('pork-pref');
+
+            // Initialize WebSocket connection
+            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            const socketUrl = isLocal ? 'http://127.0.0.1:5001' : window.location.origin;
+            const socket = io(socketUrl);
+
+            // Listen for progress updates from backend
+            socket.on('progress_update', function(data) {
+                showLoadingState(data.message, true, data.step, data.total);
+            });
 
             // Utility functions
             const debounce = (func, delay) => {
@@ -404,35 +415,9 @@
                 }
             };
 
-            // Enhanced loading with detailed steps
-            const showDetailedLoading = (campusName) => {
-                const loadingSteps = [
-                    { step: 1, message: "🔗 Connecting to Penn State dining system...", duration: 2000 },
-                    { step: 2, message: "📅 Fetching today's menu options...", duration: 2000 },
-                    { step: 3, message: "🌅 Analyzing breakfast items and nutrition data...", duration: 3000 },
-                    { step: 4, message: "☀️ Analyzing lunch items and nutrition data...", duration: 3000 },
-                    { step: 5, message: "🌙 Analyzing dinner items and nutrition data...", duration: 3000 },
-                    { step: 6, message: "📊 Extracting detailed macronutrient information...", duration: 4000 },
-                    { step: 7, message: "⚖️ Calculating health scores based on protein, fat, and carbs...", duration: 2000 },
-                    { step: 8, message: "🎯 Applying your dietary preferences and filters...", duration: 1500 },
-                    { step: 9, message: "🏆 Ranking recommendations by health score...", duration: 1500 },
-                    { step: 10, message: "✨ Finalizing your personalized recommendations...", duration: 1000 }
-                ];
-
-                let currentStep = 0;
-                const totalSteps = loadingSteps.length;
-
-                // Show initial loading state
-                showLoadingState(`🚀 Starting analysis for ${campusName}...`, true, currentStep, totalSteps);
-
-                // Show all steps immediately without delays
-                loadingSteps.forEach((stepInfo, index) => {
-                    setTimeout(() => {
-                        showLoadingState(stepInfo.message, true, index + 1, totalSteps);
-                    }, index * 100); // Very short delay just for visual effect
-                });
-
-                return null; // No interval to clear
+            // Start loading with initial message
+            const startLoading = (campusName) => {
+                showLoadingState(`🚀 Starting analysis for ${campusName}...`, true, 0, 10);
             };
 
             const savePreferences = (preferences) => {
@@ -520,8 +505,8 @@
                 const preferences = getPreferences();
                 const campusName = campusSelect.options[campusSelect.selectedIndex].text;
                 
-                // Start detailed loading animation
-                const progressInterval = showDetailedLoading(campusName);
+                // Start loading with real-time progress from backend
+                startLoading(campusName);
 
                 try {
                     // Auto-detect if running locally or on Railway
@@ -545,10 +530,7 @@
 
                     const data = await response.json();
                     
-                    // Show final loading step before displaying results
-                    showLoadingState("🎉 Preparing your personalized recommendations...", true, 10, 10);
-                    
-                    // Display results immediately
+                    // Display results immediately (progress updates come from backend)
                     displayResults(data);
 
                 } catch (error) {

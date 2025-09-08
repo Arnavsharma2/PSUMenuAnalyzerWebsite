@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify, send_from_directory
+from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 import requests
 from bs4 import BeautifulSoup
@@ -15,6 +16,7 @@ import pandas as pd
 # --- Flask App Initialization ---
 app = Flask(__name__)
 CORS(app)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 # --- Nutrition Data Extractor Class ---
 class NutritionExtractor:
@@ -286,7 +288,7 @@ class NutritionExtractor:
 # --- Menu Analyzer Class ---
 class MenuAnalyzer:
     def __init__(self, campus_key: str, gemini_api_key: str = None, exclude_beef=False, exclude_pork=False,
-                 vegetarian=False, vegan=False, prioritize_protein=False, debug=False, extract_nutrition=False):
+                 vegetarian=False, vegan=False, prioritize_protein=False, debug=False, extract_nutrition=False, socketio=None):
         self.base_url = "https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm"
         self.campus_key = campus_key
         self.session = requests.Session()
@@ -300,6 +302,7 @@ class MenuAnalyzer:
         self.vegan = vegan
         self.prioritize_protein = prioritize_protein
         self.extract_nutrition = extract_nutrition
+        self.socketio = socketio
         
         # Initialize nutrition extractor if needed
         if self.extract_nutrition:
@@ -317,6 +320,16 @@ class MenuAnalyzer:
         
         if self.prioritize_protein and self.debug:
             print("INFO: Analysis is set to prioritize protein content.")
+    
+    def emit_progress(self, step, total, message):
+        """Emit progress update to frontend via WebSocket"""
+        if self.socketio:
+            self.socketio.emit('progress_update', {
+                'step': step,
+                'total': total,
+                'message': message,
+                'percentage': int((step / total) * 100)
+            })
 
     def get_initial_form_data(self) -> Optional[Dict[str, Dict[str, str]]]:
         try:
@@ -418,6 +431,7 @@ class MenuAnalyzer:
         if self.debug: 
             print(f"Fetching initial form options for campus: {self.campus_key}")
         
+        self.emit_progress(1, 10, "🔗 Connecting to Penn State dining system...")
         form_options = self.get_initial_form_data()
         if not form_options:
             print("Could not fetch form data. Using fallback.")
@@ -433,6 +447,7 @@ class MenuAnalyzer:
         if self.debug:
             print(f"Found campus: {campus_name_found} with value: {campus_value}")
 
+        self.emit_progress(2, 10, "📅 Fetching today's menu options...")
         date_options = form_options.get('date', {})
         today_str_key = datetime.now().strftime('%A, %B %d').lower()
         date_value = date_options.get(today_str_key)
@@ -448,7 +463,9 @@ class MenuAnalyzer:
         daily_menu = {}
         meal_options = form_options.get('meal', {})
         
+        meal_steps = {"Breakfast": 3, "Lunch": 4, "Dinner": 5}
         for meal_name in ["Breakfast", "Lunch", "Dinner"]:
+            self.emit_progress(meal_steps[meal_name], 10, f"🌅 Analyzing {meal_name.lower()} items and nutrition data...")
             meal_key = meal_name.lower()
             meal_value = meal_options.get(meal_key)
             
@@ -480,8 +497,10 @@ class MenuAnalyzer:
             print("Failed to scrape any menu items from the website. Using fallback.")
             return self.get_fallback_data()
         
+        self.emit_progress(6, 10, "📊 Extracting detailed macronutrient information...")
         analyzed_results = self.analyze_menu_with_gemini(daily_menu) if self.gemini_api_key else self.analyze_menu_local(daily_menu)
         
+        self.emit_progress(7, 10, "⚖️ Calculating health scores based on protein, fat, and carbs...")
         final_results = {}
         for meal, items in analyzed_results.items():
             # First, apply the hard filters based on user preferences
@@ -498,6 +517,8 @@ class MenuAnalyzer:
             else:
                 final_results[meal] = top_5
         
+        self.emit_progress(8, 10, "🎯 Applying your dietary preferences and filters...")
+        
         # Generate nutrition CSV if requested
         if self.extract_nutrition:
             csv_path = self.generate_nutrition_csv(daily_menu)
@@ -506,9 +527,12 @@ class MenuAnalyzer:
         
         # Extract nutrition data for displayed recommendations
         if self.extract_nutrition:
+            self.emit_progress(9, 10, "🏆 Ranking recommendations by health score...")
             enhanced_results = self.enhance_recommendations_with_nutrition(final_results, daily_menu)
+            self.emit_progress(10, 10, "✨ Finalizing your personalized recommendations...")
             return enhanced_results
         
+        self.emit_progress(10, 10, "✨ Finalizing your personalized recommendations...")
         return final_results
     
     def generate_nutrition_csv(self, daily_menu: Dict[str, Dict[str, str]]) -> str:
@@ -881,7 +905,8 @@ def analyze():
             vegan=vegan,
             prioritize_protein=prioritize_protein,
             extract_nutrition=True,  # Always extract nutrition for recommendations
-            debug=True
+            debug=True,
+            socketio=socketio
         )
         
         recommendations = analyzer.run_analysis()
@@ -1027,5 +1052,5 @@ def list_csv_files():
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5001))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    socketio.run(app, host='0.0.0.0', port=port, debug=True)
 

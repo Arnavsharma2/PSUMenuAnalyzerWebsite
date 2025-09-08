@@ -302,8 +302,7 @@ class MenuAnalyzer:
         self.extract_nutrition = extract_nutrition
         
         # Initialize nutrition extractor if needed
-        if self.extract_nutrition:
-            self.nutrition_extractor = NutritionExtractor(debug=debug)
+        self.nutrition_extractor = NutritionExtractor(debug=debug) if self.extract_nutrition else None
         
         # Use the passed parameter or fall back to environment variable
         self.gemini_api_key = gemini_api_key or os.getenv('GEMINI_API_KEY')
@@ -707,7 +706,7 @@ class MenuAnalyzer:
         for item, url in food_items.items():
             # First, try to extract nutrition data for accurate scoring
             nutrition_data = None
-            if url and url != '#':
+            if self.extract_nutrition and url and url != '#':
                 try:
                     nutrition_data = self.nutrition_extractor.extract_nutrition_data(url)
                     # Add a small delay to be respectful to the server
@@ -717,7 +716,8 @@ class MenuAnalyzer:
                         print(f"Error extracting nutrition for {item}: {e}")
                     nutrition_data = self.nutrition_extractor._get_empty_nutrition_data(url)
             else:
-                nutrition_data = self.nutrition_extractor._get_empty_nutrition_data('#')
+                # Create empty nutrition data if no URL or no nutrition extraction
+                nutrition_data = self.nutrition_extractor._get_empty_nutrition_data('#') if self.nutrition_extractor else {}
             
             # Calculate health score based on macronutrient data
             if nutrition_data and nutrition_data.get('calories', 0) > 0:
@@ -948,7 +948,7 @@ def analyze():
             vegetarian=vegetarian,
             vegan=vegan,
             prioritize_protein=prioritize_protein,
-            extract_nutrition=True,  # Always extract nutrition for recommendations
+            extract_nutrition=False,  # Disabled by default to prevent timeouts
             debug=True
         )
         

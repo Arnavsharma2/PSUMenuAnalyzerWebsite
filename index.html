@@ -353,13 +353,6 @@
             const porkPref = document.getElementById('pork-pref');
 
             // Utility functions
-            const debounce = (func, delay) => {
-                let timeoutId;
-                return (...args) => {
-                    clearTimeout(timeoutId);
-                    timeoutId = setTimeout(() => func.apply(this, args), delay);
-                };
-            };
 
             const showLoadingState = (message = "Analyzing menu...", showProgress = false, currentStep = 0, totalSteps = 10) => {
                 const progressHtml = showProgress ? `
@@ -425,17 +418,14 @@
                 // Show initial loading state
                 showLoadingState(`🚀 Starting analysis for ${campusName}...`, true, currentStep, totalSteps);
 
-                const progressInterval = setInterval(() => {
-                    if (currentStep < loadingSteps.length) {
-                        const stepInfo = loadingSteps[currentStep];
-                        showLoadingState(stepInfo.message, true, currentStep + 1, totalSteps);
-                        currentStep++;
-                    } else {
-                        clearInterval(progressInterval);
-                    }
-                }, 1500); // Update every 1.5 seconds
+                // Show all steps immediately without delays
+                loadingSteps.forEach((stepInfo, index) => {
+                    setTimeout(() => {
+                        showLoadingState(stepInfo.message, true, index + 1, totalSteps);
+                    }, index * 100); // Very short delay just for visual effect
+                });
 
-                return progressInterval;
+                return null; // No interval to clear
             };
 
             const savePreferences = (preferences) => {
@@ -518,8 +508,8 @@
             veganToggle.addEventListener('change', updateToggleStates);
             campusSelect.addEventListener('change', () => savePreferences(getPreferences()));
             
-            // Debounced analysis function
-            const debouncedAnalyze = debounce(async () => {
+            // Analysis function
+            const analyze = async () => {
                 const preferences = getPreferences();
                 const campusName = campusSelect.options[campusSelect.selectedIndex].text;
                 
@@ -551,13 +541,10 @@
                     // Show final loading step before displaying results
                     showLoadingState("🎉 Preparing your personalized recommendations...", true, 10, 10);
                     
-                    // Small delay to show the final step
-                    setTimeout(() => {
-                        displayResults(data);
-                    }, 500);
+                    // Display results immediately
+                    displayResults(data);
 
                 } catch (error) {
-                    clearInterval(progressInterval);
                     console.error('Error fetching recommendations:', error);
                     
                     let errorMessage = "Could not connect to the backend server.";
@@ -581,9 +568,9 @@
                             <p class="mt-2 text-sm">${suggestion}</p>
                         </div>`;
                 }
-            }, 500);
+            };
 
-            analyzeBtn.addEventListener('click', debouncedAnalyze);
+            analyzeBtn.addEventListener('click', analyze);
             
             
 
@@ -682,7 +669,7 @@
             document.addEventListener('keydown', (e) => {
                 if (e.ctrlKey && e.key === 'Enter') {
                     e.preventDefault();
-                    debouncedAnalyze();
+                    analyze();
                 }
             });
 

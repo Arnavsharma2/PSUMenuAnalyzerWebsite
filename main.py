@@ -28,7 +28,7 @@ class NutritionExtractor:
     def extract_nutrition_data(self, url: str) -> Dict[str, any]:
         """Extract comprehensive nutrition data from a Penn State nutrition page"""
         try:
-            response = self.session.get(url, timeout=10)
+            response = self.session.get(url)
             response.raise_for_status()
             soup = BeautifulSoup(response.content, 'html.parser')
             
@@ -320,7 +320,7 @@ class MenuAnalyzer:
 
     def get_initial_form_data(self) -> Optional[Dict[str, Dict[str, str]]]:
         try:
-            response = self.session.get(self.base_url, timeout=30)
+            response = self.session.get(self.base_url)
             response.raise_for_status()
             soup = BeautifulSoup(response.content, 'html.parser')
             
@@ -459,7 +459,7 @@ class MenuAnalyzer:
             try:
                 form_data = {'selCampus': campus_value, 'selMeal': meal_value, 'selMenuDate': date_value}
                 if self.debug: print(f"Fetching menu for {meal_name} with data: {form_data}")
-                response = self.session.post(self.base_url, data=form_data, timeout=30)
+                response = self.session.post(self.base_url, data=form_data)
                 response.raise_for_status()
                 meal_soup = BeautifulSoup(response.content, 'html.parser')
                 items = self.extract_items_from_meal_page(meal_soup)
@@ -525,10 +525,8 @@ class MenuAnalyzer:
             if self.debug:
                 print(f"Extracting nutrition data for {meal_name}...")
             
-            # Limit to first 10 items per meal to prevent timeouts
-            items_to_process = list(items.items())[:10]
-            
-            for food_name, url in items_to_process:
+            # Process all items for comprehensive nutrition data
+            for food_name, url in items.items():
                 if url and url != '#':
                     try:
                         nutrition_data = self.nutrition_extractor.extract_nutrition_data(url)
@@ -629,7 +627,7 @@ class MenuAnalyzer:
         Menu: {json.dumps(menu_for_prompt, indent=2)}
         """
         try:
-            response = self.session.post(self.gemini_url, headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=60)
+            response = self.session.post(self.gemini_url, headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}]})
             response.raise_for_status()
             data = response.json()
             text_response = data["candidates"][0]["content"]["parts"][0]["text"]
@@ -947,7 +945,7 @@ def extract_nutrition():
             if meal_value:
                 try:
                     form_data = {'selCampus': campus_value, 'selMeal': meal_value, 'selMenuDate': date_value}
-                    response = analyzer.session.post(analyzer.base_url, data=form_data, timeout=30)
+                    response = analyzer.session.post(analyzer.base_url, data=form_data)
                     response.raise_for_status()
                     meal_soup = BeautifulSoup(response.content, 'html.parser')
                     items = analyzer.extract_items_from_meal_page(meal_soup)

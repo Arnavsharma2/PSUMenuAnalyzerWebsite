@@ -240,18 +240,6 @@
                         Analyze Today's Menu
                     </button>
                     
-                    <div class="border-t border-gray-200 pt-4">
-                        <h3 class="text-lg font-semibold text-gray-700 mb-3">Nutrition Data Extraction</h3>
-                        <p class="text-sm text-gray-600 mb-4">Extract detailed macronutrient data for all menu items and download as CSV</p>
-                        <div class="space-y-2">
-                            <button id="extract-nutrition-btn" class="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-6 rounded-lg shadow-md transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-green-300">
-                                Extract Nutrition Data
-                            </button>
-                            <button id="list-csv-btn" class="bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-6 rounded-lg shadow-md transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-gray-300">
-                                View Available CSVs
-                            </button>
-                        </div>
-                    </div>
                 </div>
             </div>
 
@@ -326,8 +314,6 @@
         // Main application logic
         document.addEventListener('DOMContentLoaded', function () {
             const analyzeBtn = document.getElementById('analyze-btn');
-            const extractNutritionBtn = document.getElementById('extract-nutrition-btn');
-            const listCsvBtn = document.getElementById('list-csv-btn');
             const resultsContainer = document.getElementById('results-container');
             const campusSelect = document.getElementById('campus-select');
             const vegetarianToggle = document.getElementById('vegetarian');
@@ -513,132 +499,7 @@
 
             analyzeBtn.addEventListener('click', debouncedAnalyze);
             
-            // Nutrition extraction functionality
-            extractNutritionBtn.addEventListener('click', async () => {
-                const campus = campusSelect.value;
-                
-                showLoadingState(`Extracting nutrition data for ${campusSelect.options[campusSelect.selectedIndex].text}...`, true);
-                
-                try {
-                    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-                    const apiUrl = isLocal 
-                        ? 'http://127.0.0.1:5001/api/extract-nutrition'
-                        : '/api/extract-nutrition';
-                    
-                    const response = await fetch(apiUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ campus: campus })
-                    });
-                    
-                    if (!response.ok) {
-                        const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
-                        throw new Error(errorData.error || `Server responded with status: ${response.status}`);
-                    }
-                    
-                    const data = await response.json();
-                    
-                    resultsContainer.innerHTML = `
-                        <div class="bg-green-100 border-l-4 border-green-500 text-green-800 p-4 rounded-lg shadow-sm fade-in" role="alert">
-                            <div class="flex">
-                                <div class="flex-shrink-0">
-                                    <svg class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
-                                    </svg>
-                                </div>
-                                <div class="ml-3">
-                                    <h3 class="text-sm font-medium text-green-800">Nutrition Data Extracted Successfully!</h3>
-                                    <div class="mt-2 text-sm text-green-700">
-                                        <p><strong>Campus:</strong> ${campusSelect.options[campusSelect.selectedIndex].text}</p>
-                                        <p><strong>Total Items:</strong> ${data.total_items}</p>
-                                        <p><strong>CSV File:</strong> ${data.csv_path}</p>
-                                        <div class="mt-3">
-                                            <a href="/api/download-csv/${data.csv_path.split('/').pop()}" 
-                                               class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
-                                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                                                </svg>
-                                                Download CSV
-                                            </a>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>`;
-                        
-                } catch (error) {
-                    console.error('Error extracting nutrition data:', error);
-                    resultsContainer.innerHTML = `
-                        <div class="bg-red-100 border-l-4 border-red-500 text-red-800 p-4 rounded-lg shadow-sm fade-in" role="alert">
-                            <p class="font-bold">Nutrition Extraction Error</p>
-                            <p>${error.message}</p>
-                            <p class="mt-2 text-sm">Please try again later or contact support if the issue persists.</p>
-                        </div>`;
-                }
-            });
             
-            // List CSV files functionality
-            listCsvBtn.addEventListener('click', async () => {
-                showLoadingState("Loading available CSV files...");
-                
-                try {
-                    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-                    const apiUrl = isLocal 
-                        ? 'http://127.0.0.1:5001/api/list-csv-files'
-                        : '/api/list-csv-files';
-                    
-                    const response = await fetch(apiUrl);
-                    
-                    if (!response.ok) {
-                        throw new Error(`Server responded with status: ${response.status}`);
-                    }
-                    
-                    const data = await response.json();
-                    
-                    if (data.csv_files.length === 0) {
-                        resultsContainer.innerHTML = `
-                            <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-4 rounded-lg shadow-sm fade-in" role="alert">
-                                <p class="font-bold">No CSV Files Found</p>
-                                <p>No nutrition data CSV files are available. Try extracting nutrition data first.</p>
-                            </div>`;
-                        return;
-                    }
-                    
-                    let csvListHtml = data.csv_files.map(file => {
-                        const fileSize = (file.size / 1024).toFixed(1);
-                        const createdDate = new Date(file.created).toLocaleString();
-                        return `
-                            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                <div class="flex-1">
-                                    <h4 class="text-sm font-medium text-gray-900">${file.filename}</h4>
-                                    <p class="text-xs text-gray-500">Created: ${createdDate} | Size: ${fileSize} KB</p>
-                                </div>
-                                <a href="/api/download-csv/${file.filename}" 
-                                   class="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                                    <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                                    </svg>
-                                    Download
-                                </a>
-                            </div>
-                        `;
-                    }).join('');
-                    
-                    resultsContainer.innerHTML = `
-                        <div class="bg-white rounded-lg shadow-md p-6 fade-in">
-                            <h3 class="text-xl font-bold text-gray-800 mb-4">Available Nutrition Data Files</h3>
-                            <div class="space-y-2">${csvListHtml}</div>
-                        </div>`;
-                        
-                } catch (error) {
-                    console.error('Error listing CSV files:', error);
-                    resultsContainer.innerHTML = `
-                        <div class="bg-red-100 border-l-4 border-red-500 text-red-800 p-4 rounded-lg shadow-sm fade-in" role="alert">
-                            <p class="font-bold">Error Loading CSV Files</p>
-                            <p>${error.message}</p>
-                        </div>`;
-                }
-            });
 
             function displayResults(data) {
                 resultsContainer.innerHTML = ''; // Clear previous results or loader

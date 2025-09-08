@@ -934,7 +934,7 @@ def analyze():
         exclude_beef = data.get('exclude_beef', False)
         exclude_pork = data.get('exclude_pork', False)
         prioritize_protein = data.get('prioritize_protein', False)
-        extract_nutrition = data.get('extract_nutrition', False)  # Disable by default to prevent timeouts
+        extract_nutrition = data.get('extract_nutrition', False)  # Disable by default to prevent timeouts - v2
         
         # Validate that vegan and vegetarian aren't both selected
         if vegan and vegetarian:

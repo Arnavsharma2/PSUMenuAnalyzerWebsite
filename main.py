@@ -486,8 +486,17 @@ class MenuAnalyzer:
         for meal, items in analyzed_results.items():
             # First, apply the hard filters based on user preferences
             filtered_items = self.apply_hard_filters(items)
-            # Then, slice the list to get only the top 5 items
-            final_results[meal] = filtered_items[:5]
+            
+            # Check for CYO items in top 5 and add extra recommendations
+            top_5 = filtered_items[:5]
+            cyo_count = sum(1 for item in top_5 if 'cyo' in item[0].lower() or 'create your own' in item[0].lower())
+            
+            if cyo_count > 0:
+                # Add extra items for each CYO item found
+                extra_items = filtered_items[5:5+cyo_count]  # Get next items after top 5
+                final_results[meal] = top_5 + extra_items
+            else:
+                final_results[meal] = top_5
         
         # Generate nutrition CSV if requested
         if self.extract_nutrition:
@@ -682,28 +691,153 @@ class MenuAnalyzer:
 
     def analyze_food_health_local_list(self, food_items: Dict[str, str]) -> List[Tuple[str, int, str, str]]:
         health_scores = []
+        
+        for item, url in food_items.items():
+            # First, try to extract nutrition data for accurate scoring
+            nutrition_data = None
+            if url and url != '#':
+                try:
+                    nutrition_data = self.nutrition_extractor.extract_nutrition_data(url)
+                    # Add a small delay to be respectful to the server
+                    time.sleep(0.1)
+                except Exception as e:
+                    if self.debug:
+                        print(f"Error extracting nutrition for {item}: {e}")
+                    nutrition_data = self.nutrition_extractor._get_empty_nutrition_data(url)
+            else:
+                nutrition_data = self.nutrition_extractor._get_empty_nutrition_data('#')
+            
+            # Calculate health score based on macronutrient data
+            if nutrition_data and nutrition_data.get('calories', 0) > 0:
+                score, reasoning = self.calculate_health_score_from_nutrition(nutrition_data)
+            else:
+                # Fallback to keyword-based scoring if no nutrition data
+                score, reasoning = self._fallback_keyword_scoring(item)
+            
+            health_scores.append((item, score, reasoning, url))
+        
+        return health_scores
+    
+    def calculate_health_score_from_nutrition(self, nutrition_data: Dict[str, any]) -> Tuple[int, str]:
+        """Calculate health score based on actual macronutrient data"""
+        calories = nutrition_data.get('calories', 0)
+        protein = nutrition_data.get('protein_g', 0)
+        total_fat = nutrition_data.get('total_fat_g', 0)
+        saturated_fat = nutrition_data.get('saturated_fat_g', 0)
+        carbs = nutrition_data.get('total_carb_g', 0)
+        fiber = nutrition_data.get('dietary_fiber_g', 0)
+        sodium = nutrition_data.get('sodium_mg', 0)
+        
+        if calories == 0:
+            return 50, "No nutrition data available"
+        
+        score = 50  # Base score
+        reasoning_parts = []
+        
+        # Protein scoring (0-30 points)
+        protein_per_calorie = (protein * 4) / calories if calories > 0 else 0
+        if protein_per_calorie >= 0.25:  # 25%+ calories from protein
+            score += 30
+            reasoning_parts.append("Excellent protein density")
+        elif protein_per_calorie >= 0.20:  # 20%+ calories from protein
+            score += 20
+            reasoning_parts.append("Good protein density")
+        elif protein_per_calorie >= 0.15:  # 15%+ calories from protein
+            score += 10
+            reasoning_parts.append("Moderate protein density")
+        else:
+            score -= 10
+            reasoning_parts.append("Low protein density")
+        
+        # Fat quality scoring (0-20 points)
+        if total_fat > 0:
+            saturated_ratio = saturated_fat / total_fat
+            if saturated_ratio <= 0.3:  # 30% or less saturated fat
+                score += 20
+                reasoning_parts.append("Healthy fat profile")
+            elif saturated_ratio <= 0.5:  # 50% or less saturated fat
+                score += 10
+                reasoning_parts.append("Moderate fat profile")
+            else:
+                score -= 10
+                reasoning_parts.append("High saturated fat")
+        
+        # Fiber scoring (0-15 points)
+        if carbs > 0:
+            fiber_ratio = fiber / carbs
+            if fiber_ratio >= 0.1:  # 10%+ fiber
+                score += 15
+                reasoning_parts.append("High fiber content")
+            elif fiber_ratio >= 0.05:  # 5%+ fiber
+                score += 10
+                reasoning_parts.append("Good fiber content")
+            elif fiber_ratio >= 0.02:  # 2%+ fiber
+                score += 5
+                reasoning_parts.append("Moderate fiber content")
+            else:
+                score -= 5
+                reasoning_parts.append("Low fiber content")
+        
+        # Sodium scoring (0-15 points)
+        sodium_per_calorie = sodium / calories if calories > 0 else 0
+        if sodium_per_calorie <= 1.0:  # 1mg per calorie or less
+            score += 15
+            reasoning_parts.append("Low sodium")
+        elif sodium_per_calorie <= 2.0:  # 2mg per calorie or less
+            score += 10
+            reasoning_parts.append("Moderate sodium")
+        elif sodium_per_calorie <= 3.0:  # 3mg per calorie or less
+            score += 5
+            reasoning_parts.append("Acceptable sodium")
+        else:
+            score -= 10
+            reasoning_parts.append("High sodium")
+        
+        # Calorie density bonus/penalty (0-10 points)
+        if calories <= 200:
+            score += 10
+            reasoning_parts.append("Low calorie density")
+        elif calories <= 400:
+            score += 5
+            reasoning_parts.append("Moderate calorie density")
+        elif calories >= 800:
+            score -= 10
+            reasoning_parts.append("High calorie density")
+        
+        # Protein prioritization bonus
+        if self.prioritize_protein and protein_per_calorie >= 0.20:
+            score += 10
+            reasoning_parts.append("High protein priority")
+        
+        # Ensure score is within bounds
+        score = max(0, min(100, score))
+        
+        return score, ", ".join(reasoning_parts) if reasoning_parts else "Standard nutrition profile"
+    
+    def _fallback_keyword_scoring(self, item: str) -> Tuple[int, str]:
+        """Fallback keyword-based scoring when nutrition data is unavailable"""
         protein_keywords = {'excellent': ['chicken', 'salmon', 'tuna', 'turkey'], 'good': ['beef', 'eggs', 'tofu', 'beans'], 'moderate': ['cheese', 'yogurt']}
         healthy_prep = {'excellent': ['grilled', 'baked', 'steamed'], 'good': ['sautéed'], 'poor': ['fried', 'creamy', 'battered']}
 
         protein_weights = {'excellent': 40, 'good': 30, 'moderate': 15} if self.prioritize_protein else {'excellent': 30, 'good': 20, 'moderate': 10}
         prep_weights = {'excellent': 10, 'good': 5, 'poor': -15} if self.prioritize_protein else {'excellent': 20, 'good': 10, 'poor': -25}
 
-        for item, url in food_items.items():
-            item_lower = item.lower()
-            score, reasoning = 50, []
-            for level, keywords in protein_keywords.items():
-                if any(kw in item_lower for kw in keywords):
-                    score += protein_weights[level]
-                    reasoning.append(f"High protein ({level})")
-                    break
-            for level, keywords in healthy_prep.items():
-                if any(kw in item_lower for kw in keywords):
-                    score += prep_weights[level]
-                    reasoning.append(f"Prep style ({level})")
-                    break
-            score = max(0, min(100, score))
-            health_scores.append((item, score, ", ".join(reasoning) or "Standard option", url))
-        return health_scores
+        item_lower = item.lower()
+        score, reasoning = 50, []
+        
+        for level, keywords in protein_keywords.items():
+            if any(kw in item_lower for kw in keywords):
+                score += protein_weights[level]
+                reasoning.append(f"High protein ({level})")
+                break
+        for level, keywords in healthy_prep.items():
+            if any(kw in item_lower for kw in keywords):
+                score += prep_weights[level]
+                reasoning.append(f"Prep style ({level})")
+                break
+        
+        score = max(0, min(100, score))
+        return score, ", ".join(reasoning) or "Standard option (keyword-based)"
 
 # --- Routes ---
 @app.route('/')

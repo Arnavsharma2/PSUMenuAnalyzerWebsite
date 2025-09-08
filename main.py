@@ -470,6 +470,7 @@ class MenuAnalyzer:
                     # Explicitly mark meals with no items
                     daily_menu[meal_name] = {}
                     if self.debug: print(f"No items found for {meal_name}.")
+                time.sleep(0.5)
             except requests.RequestException as e:
                 if self.debug: print(f"Error fetching {meal_name} menu: {e}")
                 # Mark as no items if there's an error
@@ -533,6 +534,8 @@ class MenuAnalyzer:
                         nutrition_data['campus'] = self.campus_key
                         all_nutrition_data.append(nutrition_data)
                         
+                        # Add small delay to be respectful to the server
+                        time.sleep(0.1)
                         
                     except Exception as e:
                         if self.debug:
@@ -587,6 +590,8 @@ class MenuAnalyzer:
                 if url and url != '#':
                     try:
                         nutrition_data = self.nutrition_extractor.extract_nutrition_data(url)
+                        # Add a small delay to be respectful to the server
+                        time.sleep(0.2)
                     except Exception as e:
                         if self.debug:
                             print(f"Error extracting nutrition for {food_name}: {e}")
@@ -691,6 +696,8 @@ class MenuAnalyzer:
             if url and url != '#':
                 try:
                     nutrition_data = self.nutrition_extractor.extract_nutrition_data(url)
+                    # Add a small delay to be respectful to the server
+                    time.sleep(0.1)
                 except Exception as e:
                     if self.debug:
                         print(f"Error extracting nutrition for {item}: {e}")
@@ -943,6 +950,7 @@ def extract_nutrition():
                     meal_soup = BeautifulSoup(response.content, 'html.parser')
                     items = analyzer.extract_items_from_meal_page(meal_soup)
                     daily_menu[meal_name] = items
+                    time.sleep(0.2)
                 except Exception as e:
                     print(f"Error fetching {meal_name} menu: {e}")
                     daily_menu[meal_name] = {}

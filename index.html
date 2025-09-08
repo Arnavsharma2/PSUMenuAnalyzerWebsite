@@ -353,6 +353,13 @@
             const porkPref = document.getElementById('pork-pref');
 
             // Utility functions
+            const debounce = (func, delay) => {
+                let timeoutId;
+                return (...args) => {
+                    clearTimeout(timeoutId);
+                    timeoutId = setTimeout(() => func.apply(this, args), delay);
+                };
+            };
 
             const showLoadingState = (message = "Analyzing menu...", showProgress = false, currentStep = 0, totalSteps = 10) => {
                 const progressHtml = showProgress ? `
@@ -508,8 +515,8 @@
             veganToggle.addEventListener('change', updateToggleStates);
             campusSelect.addEventListener('change', () => savePreferences(getPreferences()));
             
-            // Analysis function
-            const analyze = async () => {
+            // Debounced analysis function to prevent rapid clicking
+            const debouncedAnalyze = debounce(async () => {
                 const preferences = getPreferences();
                 const campusName = campusSelect.options[campusSelect.selectedIndex].text;
                 
@@ -568,9 +575,9 @@
                             <p class="mt-2 text-sm">${suggestion}</p>
                         </div>`;
                 }
-            };
+            }, 300); // Short debounce to prevent rapid clicking
 
-            analyzeBtn.addEventListener('click', analyze);
+            analyzeBtn.addEventListener('click', debouncedAnalyze);
             
             
 
@@ -669,7 +676,7 @@
             document.addEventListener('keydown', (e) => {
                 if (e.ctrlKey && e.key === 'Enter') {
                     e.preventDefault();
-                    analyze();
+                    debouncedAnalyze();
                 }
             });
 

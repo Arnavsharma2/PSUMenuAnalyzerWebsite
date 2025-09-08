@@ -63,36 +63,6 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        .loading-step {
-            background: linear-gradient(90deg, #3b82f6, #1d4ed8);
-            background-size: 200% 100%;
-            animation: shimmer 2s ease-in-out infinite;
-        }
-        @keyframes shimmer {
-            0% { background-position: -200% 0; }
-            100% { background-position: 200% 0; }
-        }
-        .step-indicator {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin-top: 1rem;
-        }
-        .step-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background-color: #e5e7eb;
-            margin: 0 4px;
-            transition: all 0.3s ease;
-        }
-        .step-dot.active {
-            background-color: #3b82f6;
-            transform: scale(1.2);
-        }
-        .step-dot.completed {
-            background-color: #10b981;
-        }
         .preference-item.disabled {
             opacity: 0.5;
             pointer-events: none;
@@ -174,7 +144,6 @@
                             <li><strong>Nutritional Balance:</strong> Items with better macro and micronutrient profiles</li>
                         </ul>
                         <p class="mt-2 font-medium">📊 <strong>Live Nutrition Data:</strong> Each recommendation now shows real-time macronutrient information including calories, protein, carbs, fat, and sodium!</p>
-                        <p class="mt-1 text-xs text-blue-600">⏱️ <strong>Loading Process:</strong> Watch the detailed progress steps to see exactly what our system is analyzing!</p>
                         <div class="mt-3 flex items-center space-x-4 text-xs">
                             <div class="flex items-center">
                                 <div class="w-4 h-4 bg-green-100 text-green-800 rounded-full flex items-center justify-center font-bold mr-2">80+</div>
@@ -341,7 +310,6 @@
         </footer>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <script>
         // Main application logic
         document.addEventListener('DOMContentLoaded', function () {
@@ -353,16 +321,6 @@
             const beefPref = document.getElementById('beef-pref');
             const porkPref = document.getElementById('pork-pref');
 
-            // Initialize WebSocket connection
-            const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-            const socketUrl = isLocal ? 'http://127.0.0.1:5001' : window.location.origin;
-            const socket = io(socketUrl);
-
-            // Listen for progress updates from backend
-            socket.on('progress_update', function(data) {
-                showLoadingState(data.message, true, data.step, data.total);
-            });
-
             // Utility functions
             const debounce = (func, delay) => {
                 let timeoutId;
@@ -372,52 +330,28 @@
                 };
             };
 
-            const showLoadingState = (message = "Analyzing menu...", showProgress = false, currentStep = 0, totalSteps = 10) => {
+            const showLoadingState = (message = "Analyzing menu...", showProgress = false) => {
                 const progressHtml = showProgress ? `
                     <div class="progress-bar mt-4">
-                        <div class="progress-fill loading-step" style="width: ${(currentStep / totalSteps) * 100}%"></div>
+                        <div class="progress-fill" style="width: 0%"></div>
                     </div>
-                    <p class="mt-2 text-sm text-gray-500">Step ${currentStep} of ${totalSteps} - This may take 15-30 seconds as we extract detailed nutrition data...</p>
-                    <div class="step-indicator">
-                        ${Array.from({length: totalSteps}, (_, i) => {
-                            let className = 'step-dot';
-                            if (i < currentStep) className += ' completed';
-                            else if (i === currentStep - 1) className += ' active';
-                            return `<div class="${className}"></div>`;
-                        }).join('')}
-                    </div>
+                    <p class="mt-2 text-sm text-gray-500">This may take 15-30 seconds as we extract detailed nutrition data...</p>
                 ` : '';
                 
                 resultsContainer.innerHTML = `
                     <div class="flex flex-col items-center justify-center p-6 bg-white rounded-lg shadow-md fade-in">
                         <div id="loader"></div>
-                        <p class="mt-4 text-gray-600 font-medium main-message">${message}</p>
+                        <p class="mt-4 text-gray-600 font-medium">${message}</p>
                         ${progressHtml}
                     </div>`;
             };
 
-            const showProgress = (step, total, message = null) => {
+            const showProgress = (step, total) => {
                 const progressFill = document.querySelector('.progress-fill');
-                const progressText = document.querySelector('.progress-text');
-                const mainMessage = document.querySelector('.main-message');
-                
                 if (progressFill) {
                     const progress = (step / total) * 100;
                     progressFill.style.width = `${progress}%`;
                 }
-                
-                if (progressText) {
-                    progressText.textContent = `Step ${step} of ${total} - ${message || 'Processing...'}`;
-                }
-                
-                if (mainMessage && message) {
-                    mainMessage.textContent = message;
-                }
-            };
-
-            // Start loading with initial message
-            const startLoading = (campusName) => {
-                showLoadingState(`🚀 Starting analysis for ${campusName}...`, true, 0, 10);
             };
 
             const savePreferences = (preferences) => {
@@ -500,13 +434,18 @@
             veganToggle.addEventListener('change', updateToggleStates);
             campusSelect.addEventListener('change', () => savePreferences(getPreferences()));
             
-            // Debounced analysis function to prevent rapid clicking
+            // Debounced analysis function
             const debouncedAnalyze = debounce(async () => {
                 const preferences = getPreferences();
-                const campusName = campusSelect.options[campusSelect.selectedIndex].text;
                 
-                // Start loading with real-time progress from backend
-                startLoading(campusName);
+                showLoadingState(`Analyzing menu and extracting nutrition data for ${campusSelect.options[campusSelect.selectedIndex].text}...`, true);
+                
+                // Simulate progress updates
+                let progressStep = 0;
+                const progressInterval = setInterval(() => {
+                    progressStep += 1;
+                    showProgress(progressStep, 10);
+                }, 1000);
 
                 try {
                     // Auto-detect if running locally or on Railway
@@ -529,11 +468,10 @@
                     }
 
                     const data = await response.json();
-                    
-                    // Display results immediately (progress updates come from backend)
                     displayResults(data);
 
                 } catch (error) {
+                    clearInterval(progressInterval);
                     console.error('Error fetching recommendations:', error);
                     
                     let errorMessage = "Could not connect to the backend server.";
@@ -557,7 +495,7 @@
                             <p class="mt-2 text-sm">${suggestion}</p>
                         </div>`;
                 }
-            }, 300); // Short debounce to prevent rapid clicking
+            }, 500);
 
             analyzeBtn.addEventListener('click', debouncedAnalyze);
             

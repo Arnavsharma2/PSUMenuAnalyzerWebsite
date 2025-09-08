@@ -9,15 +9,284 @@ from datetime import datetime
 import os
 import time
 from urllib.parse import urljoin
+import csv
+import pandas as pd
 
 # --- Flask App Initialization ---
 app = Flask(__name__)
 CORS(app)
 
+# --- Nutrition Data Extractor Class ---
+class NutritionExtractor:
+    def __init__(self, debug=False):
+        self.debug = debug
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+    
+    def extract_nutrition_data(self, url: str) -> Dict[str, any]:
+        """Extract comprehensive nutrition data from a Penn State nutrition page"""
+        try:
+            response = self.session.get(url, timeout=30)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            nutrition_data = {
+                'food_name': '',
+                'serving_size': '',
+                'calories': 0,
+                'calories_from_fat': 0,
+                'total_fat_g': 0.0,
+                'total_fat_dv': 0.0,
+                'saturated_fat_g': 0.0,
+                'saturated_fat_dv': 0.0,
+                'trans_fat_g': 0.0,
+                'cholesterol_mg': 0.0,
+                'sodium_mg': 0.0,
+                'sodium_dv': 0.0,
+                'total_carb_g': 0.0,
+                'total_carb_dv': 0.0,
+                'dietary_fiber_g': 0.0,
+                'dietary_fiber_dv': 0.0,
+                'sugars_g': 0.0,
+                'added_sugars_g': 0.0,
+                'protein_g': 0.0,
+                'protein_dv': 0.0,
+                'vitamin_d_mcg': 0.0,
+                'calcium_mg': 0.0,
+                'iron_mg': 0.0,
+                'potassium_mg': 0.0,
+                'ingredients': '',
+                'extraction_timestamp': datetime.now().isoformat(),
+                'url': url
+            }
+            
+            # Extract food name
+            food_name_elem = soup.find('h1') or soup.find('h2') or soup.find('title')
+            if food_name_elem:
+                nutrition_data['food_name'] = food_name_elem.get_text(strip=True)
+            
+            # Look for nutrition facts table or structured data
+            nutrition_table = soup.find('table', class_=re.compile(r'nutrition|facts', re.I))
+            if not nutrition_table:
+                # Try to find any table that might contain nutrition data
+                tables = soup.find_all('table')
+                for table in tables:
+                    if any(keyword in table.get_text().lower() for keyword in ['calories', 'fat', 'protein', 'carbohydrate']):
+                        nutrition_table = table
+                        break
+            
+            if nutrition_table:
+                self._parse_nutrition_table(nutrition_table, nutrition_data)
+            else:
+                # Try to extract from text patterns if no table found
+                self._parse_nutrition_text(soup, nutrition_data)
+            
+            # Extract ingredients
+            ingredients_text = self._extract_ingredients(soup)
+            nutrition_data['ingredients'] = ingredients_text
+            
+            if self.debug:
+                print(f"Extracted nutrition data for: {nutrition_data['food_name']}")
+            
+            return nutrition_data
+            
+        except Exception as e:
+            if self.debug:
+                print(f"Error extracting nutrition data from {url}: {e}")
+            return self._get_empty_nutrition_data(url)
+    
+    def _parse_nutrition_table(self, table, nutrition_data):
+        """Parse nutrition data from a structured table - optimized for Penn State format"""
+        # First, try to extract serving size and calories from the header
+        header_cell = table.find('th', class_='top')
+        if header_cell:
+            header_text = header_cell.get_text()
+            
+            # Extract serving size
+            serving_match = re.search(r'Serving Size:\s*([^<]+)', header_text)
+            if serving_match:
+                nutrition_data['serving_size'] = serving_match.group(1).strip()
+            
+            # Extract calories
+            calories_match = re.search(r'Calories:\s*(\d+)', header_text)
+            if calories_match:
+                nutrition_data['calories'] = int(calories_match.group(1))
+            
+            # Extract calories from fat
+            fat_calories_match = re.search(r'Calories from Fat:\s*(\d+)', header_text)
+            if fat_calories_match:
+                nutrition_data['calories_from_fat'] = int(fat_calories_match.group(1))
+        
+        # Parse the nutrition facts table rows
+        rows = table.find_all('tr')
+        
+        for row in rows:
+            cells = row.find_all(['td', 'th'])
+            if len(cells) >= 2:
+                # Get text from all cells
+                cell_texts = [cell.get_text(strip=True) for cell in cells]
+                
+                # Look for nutrition data in the table cells
+                for i, cell_text in enumerate(cell_texts):
+                    cell_lower = cell_text.lower()
+                    
+                    # Extract values and percentages using regex
+                    value_match = re.search(r'([\d.]+)g', cell_text)
+                    mg_value_match = re.search(r'([\d.]+)mg', cell_text)
+                    mcg_value_match = re.search(r'([\d.]+)mcg', cell_text)
+                    percent_match = re.search(r'(\d+)%', cell_text)
+                    
+                    if value_match:
+                        value = float(value_match.group(1))
+                        percent = float(percent_match.group(1)) if percent_match else 0.0
+                    elif mg_value_match:
+                        value = float(mg_value_match.group(1))
+                        percent = float(percent_match.group(1)) if percent_match else 0.0
+                    elif mcg_value_match:
+                        value = float(mcg_value_match.group(1))
+                        percent = float(percent_match.group(1)) if percent_match else 0.0
+                    else:
+                        continue
+                    
+                    # Map nutrition labels to data structure
+                    if 'total fat' in cell_lower and 'g' in cell_text:
+                        nutrition_data['total_fat_g'] = value
+                        nutrition_data['total_fat_dv'] = percent
+                    elif 'sat fat' in cell_lower and 'g' in cell_text:
+                        nutrition_data['saturated_fat_g'] = value
+                        nutrition_data['saturated_fat_dv'] = percent
+                    elif 'trans fat' in cell_lower and 'g' in cell_text:
+                        nutrition_data['trans_fat_g'] = value
+                    elif 'cholesterol' in cell_lower and 'mg' in cell_text:
+                        nutrition_data['cholesterol_mg'] = value
+                    elif 'sodium' in cell_lower and 'mg' in cell_text:
+                        nutrition_data['sodium_mg'] = value
+                        nutrition_data['sodium_dv'] = percent
+                    elif 'total carb' in cell_lower and 'g' in cell_text:
+                        nutrition_data['total_carb_g'] = value
+                        nutrition_data['total_carb_dv'] = percent
+                    elif 'dietary fiber' in cell_lower and 'g' in cell_text:
+                        nutrition_data['dietary_fiber_g'] = value
+                        nutrition_data['dietary_fiber_dv'] = percent
+                    elif 'sugars' in cell_lower and 'g' in cell_text and 'added' not in cell_lower:
+                        nutrition_data['sugars_g'] = value
+                    elif 'added sugar' in cell_lower and 'g' in cell_text:
+                        nutrition_data['added_sugars_g'] = value
+                    elif 'protein' in cell_lower and 'g' in cell_text:
+                        nutrition_data['protein_g'] = value
+                        nutrition_data['protein_dv'] = percent
+                    elif 'vitamin d' in cell_lower and 'mcg' in cell_text:
+                        nutrition_data['vitamin_d_mcg'] = value
+                    elif 'calcium' in cell_lower and 'mg' in cell_text:
+                        nutrition_data['calcium_mg'] = value
+                    elif 'iron' in cell_lower and 'mg' in cell_text:
+                        nutrition_data['iron_mg'] = value
+                    elif 'potassium' in cell_lower and 'mg' in cell_text:
+                        nutrition_data['potassium_mg'] = value
+    
+    def _parse_nutrition_text(self, soup, nutrition_data):
+        """Parse nutrition data from text patterns when no table is available"""
+        text_content = soup.get_text().lower()
+        
+        # Common patterns for nutrition data
+        patterns = {
+            'calories': r'calories[:\s]*(\d+)',
+            'total_fat': r'total fat[:\s]*([\d.]+)g',
+            'saturated_fat': r'saturated fat[:\s]*([\d.]+)g',
+            'sodium': r'sodium[:\s]*([\d.]+)mg',
+            'total_carb': r'total carbohydrate[:\s]*([\d.]+)g|total carb[:\s]*([\d.]+)g',
+            'protein': r'protein[:\s]*([\d.]+)g'
+        }
+        
+        for key, pattern in patterns.items():
+            match = re.search(pattern, text_content)
+            if match:
+                value = float(match.group(1) or match.group(2) or 0)
+                if key == 'calories':
+                    nutrition_data['calories'] = int(value)
+                elif key == 'total_fat':
+                    nutrition_data['total_fat_g'] = value
+                elif key == 'saturated_fat':
+                    nutrition_data['saturated_fat_g'] = value
+                elif key == 'sodium':
+                    nutrition_data['sodium_mg'] = value
+                elif key == 'total_carb':
+                    nutrition_data['total_carb_g'] = value
+                elif key == 'protein':
+                    nutrition_data['protein_g'] = value
+    
+    def _extract_ingredients(self, soup) -> str:
+        """Extract ingredients list from the page - optimized for Penn State format"""
+        # Look for ingredients in the specific Penn State format
+        ingredients_div = soup.find('div', class_='row col-12 mt-10 rpt-ml-20')
+        if ingredients_div:
+            ingredients_text = ingredients_div.get_text()
+            
+            # Extract ingredients using the Penn State pattern
+            ingredients_match = re.search(r'Ingredients:\s*(.+?)(?:\n\n|\n[A-Z]|Allergens:)', ingredients_text, re.IGNORECASE | re.DOTALL)
+            if ingredients_match:
+                ingredients = ingredients_match.group(1).strip()
+                # Clean up the ingredients text
+                ingredients = re.sub(r'\s+', ' ', ingredients)
+                return ingredients[:1000]  # Increased limit for more complete ingredients
+        
+        # Fallback to general patterns
+        ingredients_patterns = [
+            r'ingredients?[:\s]*(.+?)(?:\n\n|\n[A-Z]|$)',
+            r'contains?[:\s]*(.+?)(?:\n\n|\n[A-Z]|$)',
+            r'ingredient list[:\s]*(.+?)(?:\n\n|\n[A-Z]|$)'
+        ]
+        
+        text_content = soup.get_text()
+        
+        for pattern in ingredients_patterns:
+            match = re.search(pattern, text_content, re.IGNORECASE | re.DOTALL)
+            if match:
+                ingredients = match.group(1).strip()
+                # Clean up the ingredients text
+                ingredients = re.sub(r'\s+', ' ', ingredients)
+                return ingredients[:1000]  # Increased limit
+        
+        return ''
+    
+    def _get_empty_nutrition_data(self, url: str) -> Dict[str, any]:
+        """Return empty nutrition data structure when extraction fails"""
+        return {
+            'food_name': 'Unknown',
+            'serving_size': '',
+            'calories': 0,
+            'calories_from_fat': 0,
+            'total_fat_g': 0.0,
+            'total_fat_dv': 0.0,
+            'saturated_fat_g': 0.0,
+            'saturated_fat_dv': 0.0,
+            'trans_fat_g': 0.0,
+            'cholesterol_mg': 0.0,
+            'sodium_mg': 0.0,
+            'sodium_dv': 0.0,
+            'total_carb_g': 0.0,
+            'total_carb_dv': 0.0,
+            'dietary_fiber_g': 0.0,
+            'dietary_fiber_dv': 0.0,
+            'sugars_g': 0.0,
+            'added_sugars_g': 0.0,
+            'protein_g': 0.0,
+            'protein_dv': 0.0,
+            'vitamin_d_mcg': 0.0,
+            'calcium_mg': 0.0,
+            'iron_mg': 0.0,
+            'potassium_mg': 0.0,
+            'ingredients': '',
+            'extraction_timestamp': datetime.now().isoformat(),
+            'url': url
+        }
+
 # --- Menu Analyzer Class ---
 class MenuAnalyzer:
     def __init__(self, campus_key: str, gemini_api_key: str = None, exclude_beef=False, exclude_pork=False,
-                 vegetarian=False, vegan=False, prioritize_protein=False, debug=False):
+                 vegetarian=False, vegan=False, prioritize_protein=False, debug=False, extract_nutrition=False):
         self.base_url = "https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm"
         self.campus_key = campus_key
         self.session = requests.Session()
@@ -30,6 +299,11 @@ class MenuAnalyzer:
         self.vegetarian = vegetarian
         self.vegan = vegan
         self.prioritize_protein = prioritize_protein
+        self.extract_nutrition = extract_nutrition
+        
+        # Initialize nutrition extractor if needed
+        if self.extract_nutrition:
+            self.nutrition_extractor = NutritionExtractor(debug=debug)
         
         # Use the passed parameter or fall back to environment variable
         self.gemini_api_key = gemini_api_key or os.getenv('GEMINI_API_KEY')
@@ -206,7 +480,113 @@ class MenuAnalyzer:
             # Then, slice the list to get only the top 5 items
             final_results[meal] = filtered_items[:5]
         
+        # Generate nutrition CSV if requested
+        if self.extract_nutrition:
+            csv_path = self.generate_nutrition_csv(daily_menu)
+            if csv_path:
+                final_results['_csv_path'] = csv_path
+        
+        # Extract nutrition data for displayed recommendations
+        if self.extract_nutrition:
+            enhanced_results = self.enhance_recommendations_with_nutrition(final_results, daily_menu)
+            return enhanced_results
+        
         return final_results
+    
+    def generate_nutrition_csv(self, daily_menu: Dict[str, Dict[str, str]]) -> str:
+        """Generate CSV file with nutrition data for all menu items"""
+        if not self.extract_nutrition:
+            return None
+        
+        all_nutrition_data = []
+        
+        for meal_name, items in daily_menu.items():
+            if not items:
+                continue
+                
+            if self.debug:
+                print(f"Extracting nutrition data for {meal_name}...")
+            
+            for food_name, url in items.items():
+                if url and url != '#':
+                    try:
+                        nutrition_data = self.nutrition_extractor.extract_nutrition_data(url)
+                        nutrition_data['meal'] = meal_name
+                        nutrition_data['campus'] = self.campus_key
+                        all_nutrition_data.append(nutrition_data)
+                        
+                        # Add small delay to be respectful to the server
+                        time.sleep(0.5)
+                        
+                    except Exception as e:
+                        if self.debug:
+                            print(f"Error extracting nutrition for {food_name}: {e}")
+                        continue
+        
+        if not all_nutrition_data:
+            return None
+        
+        # Generate CSV filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"nutrition_data_{self.campus_key}_{timestamp}.csv"
+        filepath = os.path.join('nutrition_data', filename)
+        
+        # Create directory if it doesn't exist
+        os.makedirs('nutrition_data', exist_ok=True)
+        
+        # Write CSV file
+        fieldnames = [
+            'food_name', 'meal', 'campus', 'serving_size', 'calories', 'calories_from_fat',
+            'total_fat_g', 'total_fat_dv', 'saturated_fat_g', 'saturated_fat_dv', 'trans_fat_g',
+            'cholesterol_mg', 'sodium_mg', 'sodium_dv', 'total_carb_g', 'total_carb_dv',
+            'dietary_fiber_g', 'dietary_fiber_dv', 'sugars_g', 'added_sugars_g',
+            'protein_g', 'protein_dv', 'vitamin_d_mcg', 'calcium_mg', 'iron_mg', 'potassium_mg',
+            'ingredients', 'extraction_timestamp', 'url'
+        ]
+        
+        with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(all_nutrition_data)
+        
+        if self.debug:
+            print(f"Generated nutrition CSV: {filepath} with {len(all_nutrition_data)} items")
+        
+        return filepath
+    
+    def enhance_recommendations_with_nutrition(self, recommendations: Dict[str, List[Tuple[str, int, str, str]]], daily_menu: Dict[str, Dict[str, str]]) -> Dict[str, List[Tuple[str, int, str, str, Dict]]]:
+        """Enhance recommendations with nutrition data for display"""
+        enhanced_results = {}
+        
+        for meal, items in recommendations.items():
+            if meal == '_csv_path':
+                enhanced_results[meal] = items
+                continue
+                
+            enhanced_items = []
+            for food_name, score, reason, url in items:
+                nutrition_data = None
+                
+                # Try to get nutrition data from the daily menu
+                if url and url != '#':
+                    try:
+                        nutrition_data = self.nutrition_extractor.extract_nutrition_data(url)
+                        # Add a small delay to be respectful to the server
+                        time.sleep(0.2)
+                    except Exception as e:
+                        if self.debug:
+                            print(f"Error extracting nutrition for {food_name}: {e}")
+                        nutrition_data = self.nutrition_extractor._get_empty_nutrition_data(url)
+                else:
+                    # Create empty nutrition data if no URL
+                    nutrition_data = self.nutrition_extractor._get_empty_nutrition_data('#')
+                
+                # Add nutrition data as the 5th element in the tuple
+                enhanced_items.append((food_name, score, reason, url, nutrition_data))
+            
+            enhanced_results[meal] = enhanced_items
+        
+        return enhanced_results
 
     def analyze_menu_with_gemini(self, daily_menu: Dict[str, Dict[str, str]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
         exclusions = []
@@ -339,6 +719,7 @@ def analyze():
         exclude_beef = data.get('exclude_beef', False)
         exclude_pork = data.get('exclude_pork', False)
         prioritize_protein = data.get('prioritize_protein', False)
+        extract_nutrition = data.get('extract_nutrition', False)
         
         # Validate that vegan and vegetarian aren't both selected
         if vegan and vegetarian:
@@ -355,6 +736,7 @@ def analyze():
             vegetarian=vegetarian,
             vegan=vegan,
             prioritize_protein=prioritize_protein,
+            extract_nutrition=True,  # Always extract nutrition for recommendations
             debug=True
         )
         
@@ -367,6 +749,133 @@ def analyze():
         import traceback
         traceback.print_exc()
         return jsonify({"error": "An internal server error occurred."}), 500
+
+@app.route('/api/extract-nutrition', methods=['POST'])
+def extract_nutrition():
+    """Extract nutrition data for all menu items and generate CSV"""
+    try:
+        data = request.json
+        campus = data.get('campus', 'altoona-port-sky')
+        
+        print(f"Extracting nutrition data for campus: {campus}")
+        
+        # Get API key from environment
+        api_key = os.getenv('GEMINI_API_KEY')
+        
+        analyzer = MenuAnalyzer(
+            campus_key=campus,
+            gemini_api_key=api_key,
+            extract_nutrition=True,
+            debug=True
+        )
+        
+        # Get the raw menu data first
+        form_options = analyzer.get_initial_form_data()
+        if not form_options:
+            return jsonify({"error": "Could not fetch menu data"}), 500
+        
+        campus_options = form_options.get('campus', {})
+        campus_value, campus_name_found = analyzer.find_campus_value(campus_options)
+        
+        if not campus_value:
+            return jsonify({"error": f"Could not find campus: {campus}"}), 400
+        
+        # Get today's date
+        date_options = form_options.get('date', {})
+        today_str_key = datetime.now().strftime('%A, %B %d').lower()
+        date_value = date_options.get(today_str_key)
+        if not date_value and date_options:
+            date_value = list(date_options.values())[0]
+        
+        if not date_value:
+            return jsonify({"error": "No menu dates available"}), 400
+        
+        # Get all menu items for all meals
+        daily_menu = {}
+        meal_options = form_options.get('meal', {})
+        
+        for meal_name in ["Breakfast", "Lunch", "Dinner"]:
+            meal_key = meal_name.lower()
+            meal_value = meal_options.get(meal_key)
+            
+            if meal_value:
+                try:
+                    form_data = {'selCampus': campus_value, 'selMeal': meal_value, 'selMenuDate': date_value}
+                    response = analyzer.session.post(analyzer.base_url, data=form_data, timeout=30)
+                    response.raise_for_status()
+                    meal_soup = BeautifulSoup(response.content, 'html.parser')
+                    items = analyzer.extract_items_from_meal_page(meal_soup)
+                    daily_menu[meal_name] = items
+                    time.sleep(0.5)
+                except Exception as e:
+                    print(f"Error fetching {meal_name} menu: {e}")
+                    daily_menu[meal_name] = {}
+        
+        # Generate nutrition CSV
+        csv_path = analyzer.generate_nutrition_csv(daily_menu)
+        
+        if csv_path:
+            return jsonify({
+                "message": "Nutrition data extracted successfully",
+                "csv_path": csv_path,
+                "campus": campus,
+                "total_items": sum(len(items) for items in daily_menu.values())
+            })
+        else:
+            return jsonify({"error": "No nutrition data could be extracted"}), 500
+            
+    except Exception as e:
+        print(f"[NUTRITION EXTRACTION ERROR] {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "An internal server error occurred during nutrition extraction."}), 500
+
+@app.route('/api/download-csv/<filename>')
+def download_csv(filename):
+    """Download a generated CSV file"""
+    try:
+        # Security check - only allow CSV files from nutrition_data directory
+        if not filename.endswith('.csv') or '..' in filename or '/' in filename:
+            return jsonify({"error": "Invalid filename"}), 400
+        
+        file_path = os.path.join('nutrition_data', filename)
+        
+        if not os.path.exists(file_path):
+            return jsonify({"error": "File not found"}), 404
+        
+        return send_from_directory('nutrition_data', filename, as_attachment=True)
+        
+    except Exception as e:
+        print(f"[DOWNLOAD ERROR] {e}")
+        return jsonify({"error": "Error downloading file"}), 500
+
+@app.route('/api/list-csv-files')
+def list_csv_files():
+    """List all available CSV files"""
+    try:
+        csv_files = []
+        nutrition_dir = 'nutrition_data'
+        
+        if os.path.exists(nutrition_dir):
+            for filename in os.listdir(nutrition_dir):
+                if filename.endswith('.csv'):
+                    file_path = os.path.join(nutrition_dir, filename)
+                    stat = os.stat(file_path)
+                    csv_files.append({
+                        'filename': filename,
+                        'size': stat.st_size,
+                        'created': datetime.fromtimestamp(stat.st_ctime).isoformat(),
+                        'modified': datetime.fromtimestamp(stat.st_mtime).isoformat()
+                    })
+        
+        # Sort by creation time (newest first)
+        csv_files.sort(key=lambda x: x['created'], reverse=True)
+        
+        return jsonify({"csv_files": csv_files})
+        
+    except Exception as e:
+        print(f"[LIST CSV ERROR] {e}")
+        return jsonify({"error": "Error listing CSV files"}), 500
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5001))

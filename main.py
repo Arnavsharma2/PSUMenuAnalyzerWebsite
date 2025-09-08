@@ -302,7 +302,8 @@ class MenuAnalyzer:
         self.extract_nutrition = extract_nutrition
         
         # Initialize nutrition extractor if needed
-        self.nutrition_extractor = NutritionExtractor(debug=debug) if self.extract_nutrition else None
+        if self.extract_nutrition:
+            self.nutrition_extractor = NutritionExtractor(debug=debug)
         
         # Use the passed parameter or fall back to environment variable
         self.gemini_api_key = gemini_api_key or os.getenv('GEMINI_API_KEY')
@@ -931,7 +932,7 @@ def analyze():
         exclude_beef = data.get('exclude_beef', False)
         exclude_pork = data.get('exclude_pork', False)
         prioritize_protein = data.get('prioritize_protein', False)
-        extract_nutrition = data.get('extract_nutrition', False)
+        extract_nutrition = data.get('extract_nutrition', True)  # Enable by default
         
         # Validate that vegan and vegetarian aren't both selected
         if vegan and vegetarian:
@@ -948,7 +949,7 @@ def analyze():
             vegetarian=vegetarian,
             vegan=vegan,
             prioritize_protein=prioritize_protein,
-            extract_nutrition=False,  # Disabled by default to prevent timeouts
+            extract_nutrition=True,  # Always extract nutrition for recommendations
             debug=True
         )
         

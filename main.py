@@ -28,7 +28,7 @@ class NutritionExtractor:
     def extract_nutrition_data(self, url: str) -> Dict[str, any]:
         """Extract comprehensive nutrition data from a Penn State nutrition page"""
         try:
-            response = self.session.get(url, timeout=30)
+            response = self.session.get(url, timeout=10)
             response.raise_for_status()
             soup = BeautifulSoup(response.content, 'html.parser')
             
@@ -351,7 +351,16 @@ class MenuAnalyzer:
             'select', 'menu', 'date', 'campus', 'print', 'view', 'nutrition', 'allergen',
             'feedback', 'contact', 'hours', 'location', 'penn state', 'altoona', 
             'port sky', 'cafe', 'kitchen', 'station', 'grill', 'deli', 'market',
-            'made to order', 'action', 'no items', 'not available', 'closed'
+            'made to order', 'action', 'no items', 'not available', 'closed',
+            'dietary filters', 'sign in', 'account', 'lunch for', 'breakfast for',
+            'dinner for', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday',
+            'saturday', 'sunday', 'september', 'october', 'november', 'december',
+            'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august',
+            '2025', '2024', '2023', '2022', '2021', '2020', '2019', '2018', '2017',
+            '2016', '2015', '2014', '2013', '2012', '2011', '2010', '2009', '2008',
+            '2007', '2006', '2005', '2004', '2003', '2002', '2001', '2000',
+            'does not contain', 'contains', 'allergen', 'dietary', 'filters',
+            'custom food', 'order', 'win', 'daily menu', 'nutrition ▸'
         ]
         if any(keyword in text_lower for keyword in non_food_keywords): return False
         if not any(c.isalpha() for c in text): return False
@@ -507,7 +516,10 @@ class MenuAnalyzer:
             if self.debug:
                 print(f"Extracting nutrition data for {meal_name}...")
             
-            for food_name, url in items.items():
+            # Limit to first 10 items per meal to prevent timeouts
+            items_to_process = list(items.items())[:10]
+            
+            for food_name, url in items_to_process:
                 if url and url != '#':
                     try:
                         nutrition_data = self.nutrition_extractor.extract_nutrition_data(url)
@@ -516,7 +528,7 @@ class MenuAnalyzer:
                         all_nutrition_data.append(nutrition_data)
                         
                         # Add small delay to be respectful to the server
-                        time.sleep(0.5)
+                        time.sleep(0.1)
                         
                     except Exception as e:
                         if self.debug:
@@ -806,23 +818,27 @@ def extract_nutrition():
                     meal_soup = BeautifulSoup(response.content, 'html.parser')
                     items = analyzer.extract_items_from_meal_page(meal_soup)
                     daily_menu[meal_name] = items
-                    time.sleep(0.5)
+                    time.sleep(0.2)
                 except Exception as e:
                     print(f"Error fetching {meal_name} menu: {e}")
                     daily_menu[meal_name] = {}
         
         # Generate nutrition CSV
-        csv_path = analyzer.generate_nutrition_csv(daily_menu)
-        
-        if csv_path:
-            return jsonify({
-                "message": "Nutrition data extracted successfully",
-                "csv_path": csv_path,
-                "campus": campus,
-                "total_items": sum(len(items) for items in daily_menu.values())
-            })
-        else:
-            return jsonify({"error": "No nutrition data could be extracted"}), 500
+        try:
+            csv_path = analyzer.generate_nutrition_csv(daily_menu)
+            
+            if csv_path:
+                return jsonify({
+                    "message": "Nutrition data extracted successfully",
+                    "csv_path": csv_path,
+                    "campus": campus,
+                    "total_items": sum(len(items) for items in daily_menu.values())
+                })
+            else:
+                return jsonify({"error": "No nutrition data could be extracted"}), 500
+        except Exception as e:
+            print(f"Error generating CSV: {e}")
+            return jsonify({"error": f"Error generating CSV: {str(e)}"}), 500
             
     except Exception as e:
         print(f"[NUTRITION EXTRACTION ERROR] {e}")

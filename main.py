@@ -480,7 +480,52 @@ class MenuAnalyzer:
             print("Failed to scrape any menu items from the website. Using fallback.")
             return self.get_fallback_data()
         
-        analyzed_results = self.analyze_menu_with_gemini(daily_menu) if self.gemini_api_key else self.analyze_menu_local(daily_menu)
+        # Generate nutrition CSV first to get complete data
+        if self.extract_nutrition:
+            csv_path = self.generate_nutrition_csv(daily_menu)
+            if csv_path:
+                # Load the CSV data for AI analysis
+                import pandas as pd
+                df = pd.read_csv(csv_path)
+                csv_data = df.to_dict('records')
+                
+                # Use AI to analyze the complete nutrition data
+                analyzed_results = self.analyze_menu_with_gemini_csv(csv_data) if self.gemini_api_key else self.analyze_menu_local_from_csv(csv_data)
+            else:
+                # If CSV generation fails, still try to extract nutrition data for analysis
+                print("CSV generation failed, extracting nutrition data directly for analysis...")
+                all_nutrition_data = []
+                
+                # Extract nutrition data for all items
+                for meal_name, items in daily_menu.items():
+                    if not items:
+                        continue
+                    if self.debug:
+                        print(f"Processing {meal_name} with {len(items)} items")
+                    for food_name, url in items.items():
+                        if url and url != '#':
+                            try:
+                                nutrition_data = self.nutrition_extractor.extract_nutrition_data(url)
+                                nutrition_data['meal'] = meal_name
+                                nutrition_data['campus'] = self.campus_key
+                                all_nutrition_data.append(nutrition_data)
+                                if self.debug:
+                                    print(f"  Added {food_name} to {meal_name}")
+                                time.sleep(0.1)  # Small delay
+                            except Exception as e:
+                                if self.debug:
+                                    print(f"Error extracting nutrition for {food_name}: {e}")
+                                continue
+                
+                if all_nutrition_data:
+                    # Use AI to analyze the extracted nutrition data
+                    analyzed_results = self.analyze_menu_with_gemini_csv(all_nutrition_data) if self.gemini_api_key else self.analyze_menu_local_from_csv(all_nutrition_data)
+                else:
+                    # Final fallback to original method
+                    analyzed_results = self.analyze_menu_with_gemini(daily_menu) if self.gemini_api_key else self.analyze_menu_local(daily_menu)
+        else:
+            # Use original method if nutrition extraction is disabled
+            analyzed_results = self.analyze_menu_with_gemini(daily_menu) if self.gemini_api_key else self.analyze_menu_local(daily_menu)
         
         final_results = {}
         for meal, items in analyzed_results.items():
@@ -498,11 +543,9 @@ class MenuAnalyzer:
             else:
                 final_results[meal] = top_5
         
-        # Generate nutrition CSV if requested
-        if self.extract_nutrition:
-            csv_path = self.generate_nutrition_csv(daily_menu)
-            if csv_path:
-                final_results['_csv_path'] = csv_path
+        # Add CSV path to results if it was generated
+        if self.extract_nutrition and 'csv_path' in locals():
+            final_results['_csv_path'] = csv_path
         
         # Extract nutrition data for displayed recommendations
         if self.extract_nutrition:
@@ -534,6 +577,9 @@ class MenuAnalyzer:
                         nutrition_data['campus'] = self.campus_key
                         all_nutrition_data.append(nutrition_data)
                         
+                        if self.debug:
+                            print(f"  Successfully extracted nutrition for {food_name}")
+                        
                         # Add small delay to be respectful to the server
                         time.sleep(0.1)
                         
@@ -543,6 +589,8 @@ class MenuAnalyzer:
                         continue
         
         if not all_nutrition_data:
+            if self.debug:
+                print("No nutrition data extracted, returning None")
             return None
         
         # Generate CSV filename
@@ -606,6 +654,94 @@ class MenuAnalyzer:
             enhanced_results[meal] = enhanced_items
         
         return enhanced_results
+
+    def analyze_menu_with_gemini_csv(self, csv_data: List[Dict[str, any]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
+        """Analyze menu using complete CSV nutrition data with AI"""
+        exclusions = []
+        if self.exclude_beef: exclusions.append("No beef.")
+        if self.exclude_pork: exclusions.append("No pork.")
+        if self.vegetarian: exclusions.append("Only vegetarian items (includes eggs).")
+        if self.vegan: exclusions.append("Only vegan items (no animal products including eggs and dairy).")
+        restrictions_text = " ".join(exclusions) if exclusions else "None."
+
+        priority_instruction = ("prioritize PROTEIN content" if self.prioritize_protein else "prioritize a BALANCE of high protein and healthy preparation")
+        
+        # Group CSV data by meal
+        meal_data = {}
+        for item in csv_data:
+            meal = item.get('meal', 'Unknown')
+            if meal not in meal_data:
+                meal_data[meal] = []
+            meal_data[meal].append(item)
+        
+        # Create a comprehensive prompt with all nutrition data
+        prompt = f"""
+        Analyze the complete nutrition data below. Your goal is to {priority_instruction}. My restrictions are: {restrictions_text}
+        
+        For EACH meal, select the top 5 healthiest options based on the detailed macronutrient data provided.
+        Consider: protein content, healthy fats, fiber, sodium levels, calorie density, and overall nutritional balance.
+        
+        Return your response as a single, valid JSON object with keys "Breakfast", "Lunch", "Dinner". 
+        Each value should be a list of objects, each with "food_name", "score" (0-100), and "reasoning".
+        
+        Complete Nutrition Data:
+        {json.dumps(meal_data, indent=2)}
+        """
+        
+        try:
+            response = self.session.post(self.gemini_url, headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}]})
+            response.raise_for_status()
+            data = response.json()
+            text_response = data["candidates"][0]["content"]["parts"][0]["text"]
+            json_str = re.search(r'\{.*\}', text_response, re.DOTALL).group(0)
+            parsed_json = json.loads(json_str)
+
+            results = {}
+            for meal, analyzed_items in parsed_json.items():
+                meal_results = []
+                for item_info in analyzed_items:
+                    food_name = item_info.get("food_name")
+                    # Find the corresponding URL from the original data
+                    url = '#'
+                    for item in csv_data:
+                        if item.get('food_name') == food_name and item.get('meal') == meal:
+                            url = item.get('url', '#')
+                            break
+                    meal_results.append((food_name, item_info.get("score"), item_info.get("reasoning"), url))
+                meal_results.sort(key=lambda x: x[1], reverse=True)
+                results[meal] = meal_results
+            return results
+        except Exception as e:
+            if self.debug: print(f"Gemini CSV analysis failed: {e}. Falling back to local analysis.")
+            return self.analyze_menu_local_from_csv(csv_data)
+
+    def analyze_menu_local_from_csv(self, csv_data: List[Dict[str, any]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
+        """Fallback local analysis using CSV nutrition data"""
+        # Group by meal
+        meal_data = {}
+        for item in csv_data:
+            meal = item.get('meal', 'Unknown')
+            if meal not in meal_data:
+                meal_data[meal] = []
+            meal_data[meal].append(item)
+        
+        if self.debug:
+            print(f"Grouped nutrition data by meal: {list(meal_data.keys())}")
+            for meal, items in meal_data.items():
+                print(f"  {meal}: {len(items)} items")
+        
+        results = {}
+        for meal, items in meal_data.items():
+            analyzed_items = []
+            for item in items:
+                score, reasoning = self.calculate_health_score_from_nutrition(item)
+                analyzed_items.append((item.get('food_name', 'Unknown'), score, reasoning, item.get('url', '#')))
+            
+            analyzed_items.sort(key=lambda x: x[1], reverse=True)
+            # Take only top 5 items per meal
+            results[meal] = analyzed_items[:5]
+        
+        return results
 
     def analyze_menu_with_gemini(self, daily_menu: Dict[str, Dict[str, str]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
         exclusions = []

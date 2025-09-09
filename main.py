@@ -301,9 +301,8 @@ class MenuAnalyzer:
         self.prioritize_protein = prioritize_protein
         self.extract_nutrition = extract_nutrition
         
-        # Initialize nutrition extractor if needed
-        if self.extract_nutrition:
-            self.nutrition_extractor = NutritionExtractor(debug=debug)
+        # Initialize nutrition extractor (always needed for fallback)
+        self.nutrition_extractor = NutritionExtractor(debug=debug)
         
         # Use the passed parameter or fall back to environment variable
         self.gemini_api_key = gemini_api_key or os.getenv('GEMINI_API_KEY')
@@ -434,8 +433,9 @@ class MenuAnalyzer:
             print(f"Found campus: {campus_name_found} with value: {campus_value}")
 
         date_options = form_options.get('date', {})
-        today_str_key = datetime.now().strftime('%A, %B %d').lower()
-        date_value = date_options.get(today_str_key)
+        today_str_key = datetime.now().strftime('%A, %B %d')
+        # Try both proper case and lowercase versions
+        date_value = date_options.get(today_str_key) or date_options.get(today_str_key.lower())
         if not date_value:
             if date_options:
                 first_available_date = list(date_options.keys())[0]
@@ -926,8 +926,9 @@ def extract_nutrition():
         
         # Get today's date
         date_options = form_options.get('date', {})
-        today_str_key = datetime.now().strftime('%A, %B %d').lower()
-        date_value = date_options.get(today_str_key)
+        today_str_key = datetime.now().strftime('%A, %B %d')
+        # Try both proper case and lowercase versions
+        date_value = date_options.get(today_str_key) or date_options.get(today_str_key.lower())
         if not date_value and date_options:
             date_value = list(date_options.values())[0]
         

@@ -433,16 +433,17 @@ class MenuAnalyzer:
             print(f"Found campus: {campus_name_found} with value: {campus_value}")
 
         date_options = form_options.get('date', {})
-        if not date_options:
-            print("No dates found. Using fallback.")
-            return self.get_fallback_data()
-        
-        # Use the first available date (default date the site loads into)
-        first_date_key = list(date_options.keys())[0]
-        date_value = date_options[first_date_key]
-        
-        if self.debug:
-            print(f"Using date: {first_date_key} -> {date_value}")
+        today_str_key = datetime.now().strftime('%A, %B %d')
+        # Try both proper case and lowercase versions
+        date_value = date_options.get(today_str_key) or date_options.get(today_str_key.lower())
+        if not date_value:
+            if date_options:
+                first_available_date = list(date_options.keys())[0]
+                date_value = list(date_options.values())[0]
+                print(f"Warning: Today's menu ('{today_str_key}') not found. Using first available date: {first_available_date}")
+            else:
+                print("No dates found. Using fallback.")
+                return self.get_fallback_data()
 
         daily_menu = {}
         meal_options = form_options.get('meal', {})
@@ -481,7 +482,6 @@ class MenuAnalyzer:
         
         # Generate nutrition CSV first to get complete data
         if self.extract_nutrition:
-            if self.debug: print("📊 Generating nutrition CSV for detailed analysis...")
             csv_path = self.generate_nutrition_csv(daily_menu)
             if csv_path:
                 # Load the CSV data for AI analysis
@@ -489,15 +489,8 @@ class MenuAnalyzer:
                 df = pd.read_csv(csv_path)
                 csv_data = df.to_dict('records')
                 
-                if self.debug: print(f"📈 CSV generated with {len(csv_data)} nutrition records")
-                
                 # Use AI to analyze the complete nutrition data
-                if self.gemini_api_key:
-                    if self.debug: print("🔑 Gemini API key available - attempting AI analysis...")
-                    analyzed_results = self.analyze_menu_with_gemini_csv(csv_data)
-                else:
-                    if self.debug: print("⚠️ No Gemini API key - using local analysis...")
-                    analyzed_results = self.analyze_menu_local_from_csv(csv_data)
+                analyzed_results = self.analyze_menu_with_gemini_csv(csv_data) if self.gemini_api_key else self.analyze_menu_local_from_csv(csv_data)
             else:
                 # If CSV generation fails, still try to extract nutrition data for analysis
                 print("CSV generation failed, extracting nutrition data directly for analysis...")
@@ -683,60 +676,19 @@ class MenuAnalyzer:
         
         # Create a comprehensive prompt with all nutrition data
         prompt = f"""
-        You are a nutrition expert analyzing college dining menu items with complete macronutrient data. Select the top 5 healthiest options for EACH meal.
-
-        GOAL: {priority_instruction}
-        DIETARY RESTRICTIONS: {restrictions_text}
-
-        SCORING CRITERIA (0-100 points) - Use actual nutrition data:
-        - High protein (20g+): +25-30 points
-        - Moderate protein (10-19g): +15-25 points
-        - Low protein (<10g): +5-15 points
-        - High fiber (5g+): +15-20 points
-        - Moderate fiber (2-4g): +8-15 points
-        - Low sodium (<300mg): +15-20 points
-        - Moderate sodium (300-600mg): +5-15 points
-        - High sodium (600mg+): -10-20 points
-        - Healthy fats (mono/polyunsaturated): +10-15 points
-        - Saturated fats: -5-15 points
-        - Trans fats: -20-30 points
-        - Added sugars (0-5g): +5-10 points
-        - Added sugars (5-15g): 0 points
-        - Added sugars (15-25g): -10-15 points
-        - Added sugars (25g+): -20-30 points
-        - Calorie density (calories per serving): Lower is better
-        - Whole food ingredients: +5-15 points
-        - Highly processed ingredients: -5-15 points
-        - Overall nutritional balance: +10-25 points
-
-        PRIORITY FACTORS:
-        1. Protein content and quality
-        2. Fiber content
-        3. Sodium levels (lower is better)
-        4. Added sugar content (lower is better)
-        5. Healthy fat profile
-        6. Ingredient quality (whole foods preferred)
-        7. Calorie density
-        8. Overall nutritional completeness
-
-        INGREDIENT QUALITY ASSESSMENT:
-        - Give additional points for items made primarily from whole-food ingredients (e.g., fresh vegetables, lean meats, whole grains, natural dairy)
-        - Penalize items with long lists of additives, preservatives, or highly-processed ingredients
-        - Consider the ingredient list when scoring - prioritize natural, minimally processed foods
-
-        Return ONLY a valid JSON object with this exact structure:
-        {{
-            "Breakfast": [{{"food_name": "Item Name", "score": 85, "reasoning": "High protein (25g), low sodium (200mg), good fiber (4g), low added sugar (3g)"}}],
-            "Lunch": [{{"food_name": "Item Name", "score": 90, "reasoning": "Excellent protein (30g), low sodium (150mg), high fiber (6g), whole food ingredients"}}],
-            "Dinner": [{{"food_name": "Item Name", "score": 75, "reasoning": "Good protein (18g), moderate sodium (400mg), moderate added sugar (12g)"}}]
-        }}
-
+        Analyze the complete nutrition data below. Your goal is to {priority_instruction}. My restrictions are: {restrictions_text}
+        
+        For EACH meal, select the top 5 healthiest options based on the detailed macronutrient data provided.
+        Consider: protein content, healthy fats, fiber, sodium levels, calorie density, and overall nutritional balance.
+        
+        Return your response as a single, valid JSON object with keys "Breakfast", "Lunch", "Dinner". 
+        Each value should be a list of objects, each with "food_name", "score" (0-100), and "reasoning".
+        
         Complete Nutrition Data:
         {json.dumps(meal_data, indent=2)}
         """
         
         try:
-            if self.debug: print("🤖 Using AI (Gemini) analysis for detailed nutrition scoring...")
             response = self.session.post(self.gemini_url, headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}]})
             response.raise_for_status()
             data = response.json()
@@ -758,55 +710,13 @@ class MenuAnalyzer:
                     meal_results.append((food_name, item_info.get("score"), item_info.get("reasoning"), url))
                 meal_results.sort(key=lambda x: x[1], reverse=True)
                 results[meal] = meal_results
-            
-            # Recalculate health scores for top items using local analysis for consistency
-            if self.debug: print("🔄 Recalculating health scores for top items using local analysis...")
-            recalculated_results = self._recalculate_top_items_scores(results, csv_data)
-            if self.debug: print("✅ AI analysis completed successfully!")
-            return recalculated_results
+            return results
         except Exception as e:
-            if self.debug: print(f"❌ AI analysis failed: {e}. Falling back to local analysis.")
+            if self.debug: print(f"Gemini CSV analysis failed: {e}. Falling back to local analysis.")
             return self.analyze_menu_local_from_csv(csv_data)
-
-    def _recalculate_top_items_scores(self, ai_results: Dict[str, List[Tuple[str, int, str, str]]], csv_data: List[Dict[str, any]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
-        """Recalculate health scores for top AI-selected items using local analysis for consistency"""
-        recalculated_results = {}
-        
-        for meal, items in ai_results.items():
-            if meal == '_csv_path':
-                recalculated_results[meal] = items
-                continue
-                
-            recalculated_items = []
-            for food_name, ai_score, ai_reasoning, url in items:
-                # Find the nutrition data for this item
-                nutrition_data = None
-                for item in csv_data:
-                    if item.get('food_name') == food_name and item.get('meal') == meal:
-                        nutrition_data = item
-                        break
-                
-                if nutrition_data:
-                    # Recalculate using local analysis
-                    local_score, local_reasoning = self.calculate_health_score_from_nutrition(nutrition_data)
-                    recalculated_items.append((food_name, local_score, local_reasoning, url))
-                    if self.debug:
-                        print(f"  {food_name}: AI={ai_score} → Local={local_score}")
-                else:
-                    # Keep original if no nutrition data found
-                    recalculated_items.append((food_name, ai_score, ai_reasoning, url))
-                    if self.debug:
-                        print(f"  {food_name}: No nutrition data, keeping AI score={ai_score}")
-            
-            # Sort by recalculated scores
-            recalculated_items.sort(key=lambda x: x[1], reverse=True)
-            recalculated_results[meal] = recalculated_items
-        
-        return recalculated_results
 
     def analyze_menu_local_from_csv(self, csv_data: List[Dict[str, any]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
         """Fallback local analysis using CSV nutrition data"""
-        if self.debug: print("🧮 Using local analysis for detailed nutrition scoring...")
         # Group by meal
         meal_data = {}
         for item in csv_data:
@@ -820,202 +730,18 @@ class MenuAnalyzer:
             for meal, items in meal_data.items():
                 print(f"  {meal}: {len(items)} items")
         
-        # Find items that are unique to each meal (not served at other meals)
-        meal_unique_items = {}
-        for meal, items in meal_data.items():
-            unique_items = []
-            for item in items:
-                food_name = item.get('food_name', 'Unknown')
-                # Check if this item appears in other meals
-                appears_in_other_meals = False
-                for other_meal, other_items in meal_data.items():
-                    if other_meal != meal:
-                        for other_item in other_items:
-                            if other_item.get('food_name', 'Unknown') == food_name:
-                                appears_in_other_meals = True
-                                break
-                        if appears_in_other_meals:
-                            break
-                
-                if not appears_in_other_meals:
-                    unique_items.append(item)
-            
-            meal_unique_items[meal] = unique_items
-            if self.debug:
-                print(f"  {meal} unique items: {len(unique_items)}")
-        
         results = {}
         for meal, items in meal_data.items():
             analyzed_items = []
-            
-            # First, prioritize unique items for this meal
-            unique_items = meal_unique_items.get(meal, [])
-            for item in unique_items:
+            for item in items:
                 score, reasoning = self.calculate_health_score_from_nutrition(item)
                 analyzed_items.append((item.get('food_name', 'Unknown'), score, reasoning, item.get('url', '#')))
-            
-            # Then add other items if we don't have enough unique items
-            if len(analyzed_items) < 5:
-                for item in items:
-                    if item not in unique_items:
-                        score, reasoning = self.calculate_health_score_from_nutrition(item)
-                        analyzed_items.append((item.get('food_name', 'Unknown'), score, reasoning, item.get('url', '#')))
             
             analyzed_items.sort(key=lambda x: x[1], reverse=True)
             # Take only top 5 items per meal
             results[meal] = analyzed_items[:5]
         
-        if self.debug: print("✅ Local analysis completed successfully!")
         return results
-
-    def run_quick_analysis(self) -> Dict[str, List[Tuple[str, int, str, str]]]:
-        """Quick analysis using only food names with AI"""
-        if self.debug: 
-            print(f"Running quick analysis for campus: {self.campus_key}")
-        
-        form_options = self.get_initial_form_data()
-        if not form_options:
-            return {"error": "Could not fetch menu data"}
-        
-        # Use the first available date (default date the site loads into)
-        date_options = form_options.get('date', {})
-        if not date_options:
-            return {"error": "No date options available"}
-        
-        # Get the first available date
-        first_date_key = list(date_options.keys())[0]
-        date_value = date_options[first_date_key]
-        
-        if self.debug:
-            print(f"Using date: {first_date_key} -> {date_value}")
-        
-        # Get campus value
-        campus_options = form_options.get('campus', {})
-        campus_value, campus_name_found = self.find_campus_value(campus_options)
-        
-        if not campus_value:
-            return {"error": f"Could not find campus: {self.campus_key}"}
-        
-        # Get menu data by fetching each meal
-        daily_menu = {}
-        meal_options = form_options.get('meal', {})
-        
-        for meal_name in ["Breakfast", "Lunch", "Dinner"]:
-            meal_key = meal_name.lower()
-            meal_value = meal_options.get(meal_key)
-            
-            if not meal_value:
-                if self.debug: print(f"Could not find form value for '{meal_name}'. Skipping.")
-                continue
-
-            try:
-                form_data = {'selCampus': campus_value, 'selMeal': meal_value, 'selMenuDate': date_value}
-                if self.debug: print(f"Fetching menu for {meal_name} with data: {form_data}")
-                response = self.session.post(self.base_url, data=form_data)
-                response.raise_for_status()
-                meal_soup = BeautifulSoup(response.content, 'html.parser')
-                items = self.extract_items_from_meal_page(meal_soup)
-                if items:
-                    daily_menu[meal_name] = items
-                    if self.debug: print(f"Found {len(items)} items for {meal_name}.")
-                else:
-                    if self.debug: print(f"No items found for {meal_name}.")
-            except Exception as e:
-                if self.debug: print(f"Error fetching {meal_name}: {e}")
-                continue
-        
-        if not daily_menu:
-            return {"error": "Could not fetch menu data"}
-        
-        # Prepare food names for AI analysis
-        meal_data = {}
-        for meal_name, items in daily_menu.items():
-            meal_data[meal_name] = []
-            for item in items:
-                if isinstance(item, dict):
-                    meal_data[meal_name].append(item.get('food_name', 'Unknown'))
-                else:
-                    # If item is a string, use it directly
-                    meal_data[meal_name].append(str(item))
-        
-        # AI analysis of food names only
-        exclusions = []
-        if self.exclude_beef: exclusions.append("No beef.")
-        if self.exclude_pork: exclusions.append("No pork.")
-        if self.vegetarian: exclusions.append("Only vegetarian items (includes eggs).")
-        if self.vegan: exclusions.append("Only vegan items (no animal products including eggs and dairy).")
-        restrictions_text = " ".join(exclusions) if exclusions else "None."
-
-        priority_instruction = ("prioritize PROTEIN content" if self.prioritize_protein else "prioritize a BALANCE of healthy options")
-        
-        prompt = f"""
-        You are a nutrition expert analyzing a college dining menu. Select the top 5 healthiest options for EACH meal based on food names only.
-
-        GOAL: {priority_instruction}
-        DIETARY RESTRICTIONS: {restrictions_text}
-
-        SCORING CRITERIA (0-100 points):
-        - High protein foods (eggs, chicken, fish, beans, nuts): +20-30 points
-        - Whole grains (brown rice, whole wheat, quinoa): +15-25 points
-        - Fresh vegetables and fruits: +15-25 points
-        - Healthy cooking methods (grilled, baked, steamed, roasted): +10-20 points
-        - Lean proteins (chicken breast, fish, turkey): +15-25 points
-        - Processed/fried foods: -20-40 points
-        - High sugar items (desserts, sugary drinks): -15-30 points
-        - Refined carbs (white bread, white rice): -10-20 points
-
-        EXAMPLES OF HIGH SCORES (80-100):
-        - Grilled Chicken Breast, Scrambled Eggs, Fresh Fruit Salad
-        - Baked Salmon, Quinoa Bowl, Steamed Broccoli
-        - Greek Yogurt with Berries, Whole Grain Toast
-
-        EXAMPLES OF LOW SCORES (0-40):
-        - French Fries, Fried Chicken, Donuts
-        - White Bread, Sugary Cereal, Processed Meats
-
-        Return ONLY a valid JSON object with this exact structure:
-        {{
-            "Breakfast": [{{"food_name": "Item Name", "score": 85, "reasoning": "High protein, whole grains"}}],
-            "Lunch": [{{"food_name": "Item Name", "score": 90, "reasoning": "Lean protein, vegetables"}}],
-            "Dinner": [{{"food_name": "Item Name", "score": 75, "reasoning": "Balanced nutrition"}}]
-        }}
-
-        Menu Items by Meal:
-        {json.dumps(meal_data, indent=2)}
-        """
-        
-        if not hasattr(self, 'gemini_url') or not self.gemini_url:
-            if self.debug: print("No Gemini API key available. Using local analysis.")
-            return self.analyze_menu_local(daily_menu)
-        
-        try:
-            response = self.session.post(self.gemini_url, headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}]})
-            response.raise_for_status()
-            data = response.json()
-            text_response = data["candidates"][0]["content"]["parts"][0]["text"]
-            json_str = re.search(r'\{.*\}', text_response, re.DOTALL).group(0)
-            parsed_json = json.loads(json_str)
-
-            results = {}
-            for meal, analyzed_items in parsed_json.items():
-                meal_results = []
-                for item_info in analyzed_items:
-                    food_name = item_info.get("food_name")
-                    url = '#'
-                    # Find the item in daily_menu to get the URL
-                    for meal_name, items in daily_menu.items():
-                        for item in items:
-                            if isinstance(item, dict) and item.get('food_name') == food_name:
-                                url = item.get('url', '#')
-                                break
-                    meal_results.append((food_name, item_info.get("score"), item_info.get("reasoning"), url))
-                meal_results.sort(key=lambda x: x[1], reverse=True)
-                results[meal] = meal_results[:5]  # Limit to top 5 items
-            
-            return results
-        except Exception as e:
-            if self.debug: print(f"Quick analysis failed: {e}. Falling back to local analysis.")
-            return self.analyze_menu_local(daily_menu)
 
     def analyze_menu_with_gemini(self, daily_menu: Dict[str, Dict[str, str]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
         exclusions = []
@@ -1170,19 +896,21 @@ class MenuAnalyzer:
                 score -= 10
                 reasoning_parts.append("High saturated fat")
         
-        # Fiber scoring (0-15 points) - using absolute grams
-        if fiber >= 5:
-            score += 15
-            reasoning_parts.append("High fiber content")
-        elif fiber >= 3:
-            score += 10
-            reasoning_parts.append("Good fiber content")
-        elif fiber >= 1:
-            score += 5
-            reasoning_parts.append("Moderate fiber content")
-        else:
-            score -= 5
-            reasoning_parts.append("Low fiber content")
+        # Fiber scoring (0-15 points)
+        if carbs > 0:
+            fiber_ratio = fiber / carbs
+            if fiber_ratio >= 0.1:  # 10%+ fiber
+                score += 15
+                reasoning_parts.append("High fiber content")
+            elif fiber_ratio >= 0.05:  # 5%+ fiber
+                score += 10
+                reasoning_parts.append("Good fiber content")
+            elif fiber_ratio >= 0.02:  # 2%+ fiber
+                score += 5
+                reasoning_parts.append("Moderate fiber content")
+            else:
+                score -= 5
+                reasoning_parts.append("Low fiber content")
         
         # Sodium scoring (0-15 points)
         sodium_per_calorie = sodium / calories if calories > 0 else 0
@@ -1198,23 +926,6 @@ class MenuAnalyzer:
         else:
             score -= 10
             reasoning_parts.append("High sodium")
-        
-        # Sugar scoring (0-15 points penalty for high sugar)
-        added_sugars = nutrition_data.get('added_sugars_g', 0)
-        if added_sugars > 0:
-            sugar_percentage = (added_sugars * 4) / calories if calories > 0 else 0
-            if sugar_percentage >= 0.25:  # 25%+ calories from added sugar
-                score -= 15
-                reasoning_parts.append("Very high added sugar")
-            elif sugar_percentage >= 0.15:  # 15%+ calories from added sugar
-                score -= 10
-                reasoning_parts.append("High added sugar")
-            elif sugar_percentage >= 0.10:  # 10%+ calories from added sugar
-                score -= 5
-                reasoning_parts.append("Moderate added sugar")
-            else:
-                score += 5
-                reasoning_parts.append("Low added sugar")
         
         # Calorie density bonus/penalty (0-10 points)
         if calories <= 200:
@@ -1288,8 +999,7 @@ def analyze():
         exclude_beef = data.get('exclude_beef', False)
         exclude_pork = data.get('exclude_pork', False)
         prioritize_protein = data.get('prioritize_protein', False)
-        analysis_type = data.get('analysis_type', 'detailed')
-        extract_nutrition = analysis_type == 'detailed'  # Only extract nutrition for detailed analysis
+        extract_nutrition = data.get('extract_nutrition', False)
         
         # Validate that vegan and vegetarian aren't both selected
         if vegan and vegetarian:
@@ -1306,15 +1016,11 @@ def analyze():
             vegetarian=vegetarian,
             vegan=vegan,
             prioritize_protein=prioritize_protein,
-            extract_nutrition=extract_nutrition,
+            extract_nutrition=True,  # Always extract nutrition for recommendations
             debug=True
         )
         
-        # Choose analysis method based on type
-        if analysis_type == 'quick':
-            recommendations = analyzer.run_quick_analysis()
-        else:
-            recommendations = analyzer.run_analysis()
+        recommendations = analyzer.run_analysis()
         print(f"Returning recommendations: {recommendations}")
         
         return jsonify(recommendations)
@@ -1354,13 +1060,16 @@ def extract_nutrition():
         if not campus_value:
             return jsonify({"error": f"Could not find campus: {campus}"}), 400
         
-        # Use the first available date (default date the site loads into)
+        # Get today's date
         date_options = form_options.get('date', {})
-        if not date_options:
-            return jsonify({"error": "No menu dates available"}), 400
+        today_str_key = datetime.now().strftime('%A, %B %d')
+        # Try both proper case and lowercase versions
+        date_value = date_options.get(today_str_key) or date_options.get(today_str_key.lower())
+        if not date_value and date_options:
+            date_value = list(date_options.values())[0]
         
-        first_date_key = list(date_options.keys())[0]
-        date_value = date_options[first_date_key]
+        if not date_value:
+            return jsonify({"error": "No menu dates available"}), 400
         
         # Get all menu items for all meals
         daily_menu = {}

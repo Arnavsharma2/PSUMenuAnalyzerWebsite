@@ -756,12 +756,46 @@ class MenuAnalyzer:
             for meal, items in meal_data.items():
                 print(f"  {meal}: {len(items)} items")
         
+        # Find items that are unique to each meal (not served at other meals)
+        meal_unique_items = {}
+        for meal, items in meal_data.items():
+            unique_items = []
+            for item in items:
+                food_name = item.get('food_name', 'Unknown')
+                # Check if this item appears in other meals
+                appears_in_other_meals = False
+                for other_meal, other_items in meal_data.items():
+                    if other_meal != meal:
+                        for other_item in other_items:
+                            if other_item.get('food_name', 'Unknown') == food_name:
+                                appears_in_other_meals = True
+                                break
+                        if appears_in_other_meals:
+                            break
+                
+                if not appears_in_other_meals:
+                    unique_items.append(item)
+            
+            meal_unique_items[meal] = unique_items
+            if self.debug:
+                print(f"  {meal} unique items: {len(unique_items)}")
+        
         results = {}
         for meal, items in meal_data.items():
             analyzed_items = []
-            for item in items:
+            
+            # First, prioritize unique items for this meal
+            unique_items = meal_unique_items.get(meal, [])
+            for item in unique_items:
                 score, reasoning = self.calculate_health_score_from_nutrition(item)
                 analyzed_items.append((item.get('food_name', 'Unknown'), score, reasoning, item.get('url', '#')))
+            
+            # Then add other items if we don't have enough unique items
+            if len(analyzed_items) < 5:
+                for item in items:
+                    if item not in unique_items:
+                        score, reasoning = self.calculate_health_score_from_nutrition(item)
+                        analyzed_items.append((item.get('food_name', 'Unknown'), score, reasoning, item.get('url', '#')))
             
             analyzed_items.sort(key=lambda x: x[1], reverse=True)
             # Take only top 5 items per meal

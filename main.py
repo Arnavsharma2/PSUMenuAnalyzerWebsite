@@ -433,17 +433,16 @@ class MenuAnalyzer:
             print(f"Found campus: {campus_name_found} with value: {campus_value}")
 
         date_options = form_options.get('date', {})
-        today_str_key = datetime.now().strftime('%A, %B %d')
-        # Try both proper case and lowercase versions
-        date_value = date_options.get(today_str_key) or date_options.get(today_str_key.lower())
-        if not date_value:
-            if date_options:
-                first_available_date = list(date_options.keys())[0]
-                date_value = list(date_options.values())[0]
-                print(f"Warning: Today's menu ('{today_str_key}') not found. Using first available date: {first_available_date}")
-            else:
-                print("No dates found. Using fallback.")
-                return self.get_fallback_data()
+        if not date_options:
+            print("No dates found. Using fallback.")
+            return self.get_fallback_data()
+        
+        # Use the first available date (default date the site loads into)
+        first_date_key = list(date_options.keys())[0]
+        date_value = date_options[first_date_key]
+        
+        if self.debug:
+            print(f"Using date: {first_date_key} -> {date_value}")
 
         daily_menu = {}
         meal_options = form_options.get('meal', {})
@@ -676,14 +675,41 @@ class MenuAnalyzer:
         
         # Create a comprehensive prompt with all nutrition data
         prompt = f"""
-        Analyze the complete nutrition data below. Your goal is to {priority_instruction}. My restrictions are: {restrictions_text}
-        
-        For EACH meal, select the top 5 healthiest options based on the detailed macronutrient data provided.
-        Consider: protein content, healthy fats, fiber, sodium levels, calorie density, and overall nutritional balance.
-        
-        Return your response as a single, valid JSON object with keys "Breakfast", "Lunch", "Dinner". 
-        Each value should be a list of objects, each with "food_name", "score" (0-100), and "reasoning".
-        
+        You are a nutrition expert analyzing college dining menu items with complete macronutrient data. Select the top 5 healthiest options for EACH meal.
+
+        GOAL: {priority_instruction}
+        DIETARY RESTRICTIONS: {restrictions_text}
+
+        SCORING CRITERIA (0-100 points) - Use actual nutrition data:
+        - High protein (20g+): +25-30 points
+        - Moderate protein (10-19g): +15-25 points
+        - Low protein (<10g): +5-15 points
+        - High fiber (5g+): +15-20 points
+        - Moderate fiber (2-4g): +8-15 points
+        - Low sodium (<300mg): +15-20 points
+        - Moderate sodium (300-600mg): +5-15 points
+        - High sodium (600mg+): -10-20 points
+        - Healthy fats (mono/polyunsaturated): +10-15 points
+        - Saturated fats: -5-15 points
+        - Trans fats: -20-30 points
+        - Calorie density (calories per serving): Lower is better
+        - Overall nutritional balance: +10-25 points
+
+        PRIORITY FACTORS:
+        1. Protein content and quality
+        2. Fiber content
+        3. Sodium levels (lower is better)
+        4. Healthy fat profile
+        5. Calorie density
+        6. Overall nutritional completeness
+
+        Return ONLY a valid JSON object with this exact structure:
+        {{
+            "Breakfast": [{{"food_name": "Item Name", "score": 85, "reasoning": "High protein (25g), low sodium (200mg), good fiber (4g)"}}],
+            "Lunch": [{{"food_name": "Item Name", "score": 90, "reasoning": "Excellent protein (30g), low sodium (150mg), high fiber (6g)"}}],
+            "Dinner": [{{"food_name": "Item Name", "score": 75, "reasoning": "Good protein (18g), moderate sodium (400mg)"}}]
+        }}
+
         Complete Nutrition Data:
         {json.dumps(meal_data, indent=2)}
         """
@@ -752,25 +778,66 @@ class MenuAnalyzer:
         if not form_options:
             return {"error": "Could not fetch menu data"}
         
-        # Get today's date
-        today_str_key = datetime.now().strftime('%A, %B %d')
-        date_value = form_options.get(today_str_key) or form_options.get(today_str_key.lower())
+        # Use the first available date (default date the site loads into)
+        date_options = form_options.get('date', {})
+        if not date_options:
+            return {"error": "No date options available"}
         
-        if not date_value:
-            return {"error": f"Could not find menu for today ({today_str_key})"}
+        # Get the first available date
+        first_date_key = list(date_options.keys())[0]
+        date_value = date_options[first_date_key]
         
-        # Get menu data
-        menu_data = self.get_menu_data(date_value)
-        if not menu_data:
+        if self.debug:
+            print(f"Using date: {first_date_key} -> {date_value}")
+        
+        # Get campus value
+        campus_options = form_options.get('campus', {})
+        campus_value, campus_name_found = self.find_campus_value(campus_options)
+        
+        if not campus_value:
+            return {"error": f"Could not find campus: {self.campus_key}"}
+        
+        # Get menu data by fetching each meal
+        daily_menu = {}
+        meal_options = form_options.get('meal', {})
+        
+        for meal_name in ["Breakfast", "Lunch", "Dinner"]:
+            meal_key = meal_name.lower()
+            meal_value = meal_options.get(meal_key)
+            
+            if not meal_value:
+                if self.debug: print(f"Could not find form value for '{meal_name}'. Skipping.")
+                continue
+
+            try:
+                form_data = {'selCampus': campus_value, 'selMeal': meal_value, 'selMenuDate': date_value}
+                if self.debug: print(f"Fetching menu for {meal_name} with data: {form_data}")
+                response = self.session.post(self.base_url, data=form_data)
+                response.raise_for_status()
+                meal_soup = BeautifulSoup(response.content, 'html.parser')
+                items = self.extract_items_from_meal_page(meal_soup)
+                if items:
+                    daily_menu[meal_name] = items
+                    if self.debug: print(f"Found {len(items)} items for {meal_name}.")
+                else:
+                    if self.debug: print(f"No items found for {meal_name}.")
+            except Exception as e:
+                if self.debug: print(f"Error fetching {meal_name}: {e}")
+                continue
+        
+        if not daily_menu:
             return {"error": "Could not fetch menu data"}
         
         # Prepare food names for AI analysis
         meal_data = {}
-        for item in menu_data:
-            meal = item.get('meal', 'Unknown')
-            if meal not in meal_data:
-                meal_data[meal] = []
-            meal_data[meal].append(item.get('food_name', 'Unknown'))
+        for meal_name, items in daily_menu.items():
+            meal_data[meal_name] = []
+            for item in items:
+                if isinstance(item, dict):
+                    meal_data[meal_name].append(item.get('food_name', 'Unknown'))
+                else:
+                    # If item is a string, use it directly
+                    meal_data[meal_name].append(str(item))
         
         # AI analysis of food names only
         exclusions = []
@@ -783,17 +850,44 @@ class MenuAnalyzer:
         priority_instruction = ("prioritize PROTEIN content" if self.prioritize_protein else "prioritize a BALANCE of healthy options")
         
         prompt = f"""
-        Analyze the menu items below and select the top 5 healthiest options for EACH meal based on food names only.
-        Your goal is to {priority_instruction}. My restrictions are: {restrictions_text}
-        
-        Consider: protein content, healthy preparation methods, whole foods, vegetables, lean proteins, and overall nutritional value based on the food names.
-        
-        Return your response as a single, valid JSON object with keys "Breakfast", "Lunch", "Dinner". 
-        Each value should be a list of objects, each with "food_name", "score" (0-100), and "reasoning".
-        
+        You are a nutrition expert analyzing a college dining menu. Select the top 5 healthiest options for EACH meal based on food names only.
+
+        GOAL: {priority_instruction}
+        DIETARY RESTRICTIONS: {restrictions_text}
+
+        SCORING CRITERIA (0-100 points):
+        - High protein foods (eggs, chicken, fish, beans, nuts): +20-30 points
+        - Whole grains (brown rice, whole wheat, quinoa): +15-25 points
+        - Fresh vegetables and fruits: +15-25 points
+        - Healthy cooking methods (grilled, baked, steamed, roasted): +10-20 points
+        - Lean proteins (chicken breast, fish, turkey): +15-25 points
+        - Processed/fried foods: -20-40 points
+        - High sugar items (desserts, sugary drinks): -15-30 points
+        - Refined carbs (white bread, white rice): -10-20 points
+
+        EXAMPLES OF HIGH SCORES (80-100):
+        - Grilled Chicken Breast, Scrambled Eggs, Fresh Fruit Salad
+        - Baked Salmon, Quinoa Bowl, Steamed Broccoli
+        - Greek Yogurt with Berries, Whole Grain Toast
+
+        EXAMPLES OF LOW SCORES (0-40):
+        - French Fries, Fried Chicken, Donuts
+        - White Bread, Sugary Cereal, Processed Meats
+
+        Return ONLY a valid JSON object with this exact structure:
+        {{
+            "Breakfast": [{{"food_name": "Item Name", "score": 85, "reasoning": "High protein, whole grains"}}],
+            "Lunch": [{{"food_name": "Item Name", "score": 90, "reasoning": "Lean protein, vegetables"}}],
+            "Dinner": [{{"food_name": "Item Name", "score": 75, "reasoning": "Balanced nutrition"}}]
+        }}
+
         Menu Items by Meal:
         {json.dumps(meal_data, indent=2)}
         """
+        
+        if not hasattr(self, 'gemini_url') or not self.gemini_url:
+            if self.debug: print("No Gemini API key available. Using local analysis.")
+            return self.analyze_menu_local(daily_menu)
         
         try:
             response = self.session.post(self.gemini_url, headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}]})
@@ -809,10 +903,12 @@ class MenuAnalyzer:
                 for item_info in analyzed_items:
                     food_name = item_info.get("food_name")
                     url = '#'
-                    for item in menu_data:
-                        if item.get('food_name') == food_name and item.get('meal') == meal:
-                            url = item.get('url', '#')
-                            break
+                    # Find the item in daily_menu to get the URL
+                    for meal_name, items in daily_menu.items():
+                        for item in items:
+                            if isinstance(item, dict) and item.get('food_name') == food_name:
+                                url = item.get('url', '#')
+                                break
                     meal_results.append((food_name, item_info.get("score"), item_info.get("reasoning"), url))
                 meal_results.sort(key=lambda x: x[1], reverse=True)
                 results[meal] = meal_results[:5]  # Limit to top 5 items
@@ -820,7 +916,7 @@ class MenuAnalyzer:
             return results
         except Exception as e:
             if self.debug: print(f"Quick analysis failed: {e}. Falling back to local analysis.")
-            return self.analyze_menu_local(menu_data)
+            return self.analyze_menu_local(daily_menu)
 
     def analyze_menu_with_gemini(self, daily_menu: Dict[str, Dict[str, str]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
         exclusions = []
@@ -1144,16 +1240,13 @@ def extract_nutrition():
         if not campus_value:
             return jsonify({"error": f"Could not find campus: {campus}"}), 400
         
-        # Get today's date
+        # Use the first available date (default date the site loads into)
         date_options = form_options.get('date', {})
-        today_str_key = datetime.now().strftime('%A, %B %d')
-        # Try both proper case and lowercase versions
-        date_value = date_options.get(today_str_key) or date_options.get(today_str_key.lower())
-        if not date_value and date_options:
-            date_value = list(date_options.values())[0]
-        
-        if not date_value:
+        if not date_options:
             return jsonify({"error": "No menu dates available"}), 400
+        
+        first_date_key = list(date_options.keys())[0]
+        date_value = date_options[first_date_key]
         
         # Get all menu items for all meals
         daily_menu = {}

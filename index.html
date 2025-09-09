@@ -63,22 +63,43 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        .preference-item.disabled {
-            opacity: 0.5;
-            pointer-events: none;
-        }
+        
+        /* Enhanced progress bar with gradient */
         .progress-bar {
             width: 100%;
-            height: 4px;
-            background-color: #e5e7eb;
-            border-radius: 2px;
+            height: 8px;
+            background: linear-gradient(90deg, #e5e7eb, #f3f4f6);
+            border-radius: 4px;
             overflow: hidden;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
         }
         .progress-fill {
             height: 100%;
-            background-color: #3b82f6;
-            border-radius: 2px;
+            background: linear-gradient(90deg, #3b82f6, #1d4ed8, #3b82f6);
+            background-size: 200% 100%;
+            border-radius: 4px;
             transition: width 0.3s ease;
+            animation: shimmer 2s infinite;
+        }
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+        
+        /* Fun fact animation */
+        #fun-fact-text {
+            transition: opacity 0.5s ease-in-out;
+        }
+        
+        /* Bouncing dots animation */
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-10px); }
+            60% { transform: translateY(-5px); }
+        }
+        .preference-item.disabled {
+            opacity: 0.5;
+            pointer-events: none;
         }
         .fade-in {
             animation: fadeIn 0.5s ease-in;
@@ -336,6 +357,17 @@
                         <div class="progress-fill" style="width: 0%"></div>
                     </div>
                     <p class="mt-2 text-sm text-gray-500">This may take 1-2 minutes as we extract detailed nutrition data...</p>
+                    <div id="fun-facts" class="mt-4 text-center">
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2">
+                            <p class="text-sm text-blue-800 font-medium">💡 Fun Fact:</p>
+                            <p class="text-xs text-blue-700" id="fun-fact-text">Loading interesting nutrition facts...</p>
+                        </div>
+                        <div class="flex justify-center space-x-2">
+                            <div class="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
+                            <div class="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style="animation-delay: 0.1s"></div>
+                            <div class="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></div>
+                        </div>
+                    </div>
                 ` : '';
                 
                 resultsContainer.innerHTML = `
@@ -351,6 +383,57 @@
                 if (progressFill) {
                     const progress = (step / total) * 100;
                     progressFill.style.width = `${progress}%`;
+                }
+            };
+
+            // Fun facts to display during loading
+            const funFacts = [
+                "🍎 An apple a day keeps the doctor away! Apples are rich in fiber and vitamin C.",
+                "🥗 Leafy greens like spinach contain more iron than red meat per calorie!",
+                "🐟 Salmon is one of the best sources of omega-3 fatty acids for brain health.",
+                "🥜 Nuts are packed with healthy fats, protein, and can help reduce cholesterol.",
+                "🥕 Carrots get their orange color from beta-carotene, which converts to vitamin A.",
+                "🍌 Bananas are a great source of potassium, which helps regulate blood pressure.",
+                "🥛 Greek yogurt has twice the protein of regular yogurt and is great for gut health.",
+                "🌶️ Spicy foods can boost your metabolism and help with weight management.",
+                "🥑 Avocados are technically a fruit and contain more potassium than bananas!",
+                "🍓 Berries are antioxidant powerhouses that can help fight inflammation.",
+                "🥚 Eggs contain all 9 essential amino acids, making them a complete protein.",
+                "🌾 Whole grains provide sustained energy and help keep you full longer.",
+                "🥦 Broccoli contains more vitamin C than an orange and is rich in folate.",
+                "🍅 Tomatoes are rich in lycopene, which may help protect against certain cancers.",
+                "🥜 Almonds are one of the most nutrient-dense nuts, packed with vitamin E.",
+                "🐟 Tuna is an excellent source of lean protein and B vitamins.",
+                "🥬 Kale is considered a superfood due to its high nutrient density.",
+                "🍠 Sweet potatoes are rich in beta-carotene and provide complex carbohydrates.",
+                "🥛 Milk provides calcium, vitamin D, and high-quality protein in one package.",
+                "🌰 Walnuts are the only nut that contains significant amounts of omega-3 fatty acids."
+            ];
+
+            // Motivational messages for different loading stages
+            const loadingMessages = [
+                "🔍 Scraping today's menu items...",
+                "📊 Extracting detailed nutrition data...",
+                "🧠 Analyzing macronutrients with AI...",
+                "⚖️ Calculating health scores...",
+                "🎯 Ranking the best options for you...",
+                "✨ Almost ready with your recommendations!"
+            ];
+
+            let currentFactIndex = 0;
+            let factInterval;
+
+            const startFunFacts = () => {
+                const factText = document.getElementById('fun-fact-text');
+                if (factText) {
+                    factText.textContent = funFacts[currentFactIndex];
+                    currentFactIndex = (currentFactIndex + 1) % funFacts.length;
+                }
+            };
+
+            const stopFunFacts = () => {
+                if (factInterval) {
+                    clearInterval(factInterval);
                 }
             };
 
@@ -440,6 +523,10 @@
                 
                 showLoadingState(`Analyzing menu and extracting nutrition data for ${campusSelect.options[campusSelect.selectedIndex].text}...`, true);
                 
+                // Start fun facts rotation
+                startFunFacts();
+                factInterval = setInterval(startFunFacts, 3000); // Change fact every 3 seconds
+                
                 // Simulate progress updates
                 let progressStep = 0;
                 const progressInterval = setInterval(() => {
@@ -461,6 +548,7 @@
                     });
 
                     clearInterval(progressInterval);
+                    stopFunFacts();
 
                     if (!response.ok) {
                         const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response from server.' }));
@@ -472,6 +560,7 @@
 
                 } catch (error) {
                     clearInterval(progressInterval);
+                    stopFunFacts();
                     console.error('Error fetching recommendations:', error);
                     
                     let errorMessage = "Could not connect to the backend server.";

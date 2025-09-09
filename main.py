@@ -26,76 +26,106 @@ class NutritionExtractor:
         })
     
     def extract_nutrition_data(self, url: str) -> Dict[str, any]:
-        """Extract comprehensive nutrition data from a Penn State nutrition page"""
-        try:
-            response = self.session.get(url)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.content, 'html.parser')
+        """Extract comprehensive nutrition data from a Penn State nutrition page with retry logic"""
+        for attempt in range(3):
+            try:
+                response = self.session.get(url)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.content, 'html.parser')
             
-            nutrition_data = {
-                'food_name': '',
-                'serving_size': '',
-                'calories': 0,
-                'calories_from_fat': 0,
-                'total_fat_g': 0.0,
-                'total_fat_dv': 0.0,
-                'saturated_fat_g': 0.0,
-                'saturated_fat_dv': 0.0,
-                'trans_fat_g': 0.0,
-                'cholesterol_mg': 0.0,
-                'sodium_mg': 0.0,
-                'sodium_dv': 0.0,
-                'total_carb_g': 0.0,
-                'total_carb_dv': 0.0,
-                'dietary_fiber_g': 0.0,
-                'dietary_fiber_dv': 0.0,
-                'sugars_g': 0.0,
-                'added_sugars_g': 0.0,
-                'protein_g': 0.0,
-                'protein_dv': 0.0,
-                'vitamin_d_mcg': 0.0,
-                'calcium_mg': 0.0,
-                'iron_mg': 0.0,
-                'potassium_mg': 0.0,
-                'ingredients': '',
-                'extraction_timestamp': datetime.now().isoformat(),
-                'url': url
-            }
-            
-            # Extract food name
-            food_name_elem = soup.find('h1') or soup.find('h2') or soup.find('title')
-            if food_name_elem:
-                nutrition_data['food_name'] = food_name_elem.get_text(strip=True)
-            
-            # Look for nutrition facts table or structured data
-            nutrition_table = soup.find('table', class_=re.compile(r'nutrition|facts', re.I))
-            if not nutrition_table:
-                # Try to find any table that might contain nutrition data
-                tables = soup.find_all('table')
-                for table in tables:
-                    if any(keyword in table.get_text().lower() for keyword in ['calories', 'fat', 'protein', 'carbohydrate']):
-                        nutrition_table = table
-                        break
-            
-            if nutrition_table:
-                self._parse_nutrition_table(nutrition_table, nutrition_data)
-            else:
-                # Try to extract from text patterns if no table found
-                self._parse_nutrition_text(soup, nutrition_data)
-            
-            # Extract ingredients
-            ingredients_text = self._extract_ingredients(soup)
-            nutrition_data['ingredients'] = ingredients_text
-            
-            if self.debug:
-                print(f"Extracted nutrition data for: {nutrition_data['food_name']}")
-            
-            return nutrition_data
-            
-        except Exception as e:
-            if self.debug:
-                print(f"Error extracting nutrition data from {url}: {e}")
-            return self._get_empty_nutrition_data(url)
+                nutrition_data = {
+                    'food_name': '',
+                    'serving_size': '',
+                    'calories': 0,
+                    'calories_from_fat': 0,
+                    'total_fat_g': 0.0,
+                    'total_fat_dv': 0.0,
+                    'saturated_fat_g': 0.0,
+                    'saturated_fat_dv': 0.0,
+                    'trans_fat_g': 0.0,
+                    'cholesterol_mg': 0.0,
+                    'sodium_mg': 0.0,
+                    'sodium_dv': 0.0,
+                    'total_carb_g': 0.0,
+                    'total_carb_dv': 0.0,
+                    'dietary_fiber_g': 0.0,
+                    'dietary_fiber_dv': 0.0,
+                    'sugars_g': 0.0,
+                    'added_sugars_g': 0.0,
+                    'protein_g': 0.0,
+                    'protein_dv': 0.0,
+                    'vitamin_d_mcg': 0.0,
+                    'calcium_mg': 0.0,
+                    'iron_mg': 0.0,
+                    'potassium_mg': 0.0,
+                    'ingredients': '',
+                    'extraction_timestamp': datetime.now().isoformat(),
+                    'url': url
+                }
+                
+                # Extract food name
+                food_name_elem = soup.find('h1') or soup.find('h2') or soup.find('title')
+                if food_name_elem:
+                    nutrition_data['food_name'] = food_name_elem.get_text(strip=True)
+                
+                # Look for nutrition facts table or structured data
+                nutrition_table = soup.find('table', class_=re.compile(r'nutrition|facts', re.I))
+                if not nutrition_table:
+                    # Try to find any table that might contain nutrition data
+                    tables = soup.find_all('table')
+                    for table in tables:
+                        if any(keyword in table.get_text().lower() for keyword in ['calories', 'fat', 'protein', 'carbohydrate']):
+                            nutrition_table = table
+                            break
+                
+                if nutrition_table:
+                    self._parse_nutrition_table(nutrition_table, nutrition_data)
+                else:
+                    # Try to extract from text patterns if no table found
+                    self._parse_nutrition_text(soup, nutrition_data)
+                
+                # Extract ingredients
+                ingredients_text = self._extract_ingredients(soup)
+                nutrition_data['ingredients'] = ingredients_text
+                
+                # Validate extracted data
+                if self.validate_nutrition_data(nutrition_data):
+                    if self.debug:
+                        print(f"Successfully extracted nutrition for {nutrition_data['food_name']}")
+                    return nutrition_data
+                else:
+                    if attempt < 2:  # Not the last attempt
+                        if self.debug:
+                            print(f"Invalid nutrition data for {url}, retrying...")
+                        time.sleep(1)
+                        continue
+                    else:
+                        if self.debug:
+                            print(f"Invalid nutrition data for {url}, using empty data")
+                        return self._get_empty_nutrition_data(url)
+                
+            except Exception as e:
+                if attempt < 2:  # Not the last attempt
+                    if self.debug:
+                        print(f"Attempt {attempt + 1} failed for {url}: {e}, retrying...")
+                    time.sleep(1)
+                    continue
+                else:
+                    if self.debug:
+                        print(f"Error extracting nutrition data from {url}: {e}")
+                    return self._get_empty_nutrition_data(url)
+    
+    def validate_nutrition_data(self, data: Dict[str, any]) -> bool:
+        """Validate that extracted nutrition data is reasonable"""
+        if data['calories'] == 0:
+            return False
+        if data['protein_g'] < 0 or data['sodium_mg'] < 0:
+            return False
+        if data['calories'] > 2000:  # Unreasonably high calories
+            return False
+        if data['sodium_mg'] > 5000:  # Unreasonably high sodium
+            return False
+        return True
     
     def _parse_nutrition_table(self, table, nutrition_data):
         """Parse nutrition data from a structured table - optimized for Penn State format"""
@@ -414,6 +444,8 @@ class MenuAnalyzer:
         return None, ""
 
     def run_analysis(self) -> Dict[str, List[Tuple[str, int, str, str]]]:
+        start_time = time.time()
+        
         if self.debug: 
             print(f"Fetching initial form options for campus: {self.campus_key}")
         
@@ -490,42 +522,14 @@ class MenuAnalyzer:
                 csv_data = df.to_dict('records')
                 
                 # Use AI to analyze the complete nutrition data
-                analyzed_results = self.analyze_menu_with_gemini_csv(csv_data) if self.gemini_api_key else self.analyze_menu_local_from_csv(csv_data)
+                if not self.gemini_api_key:
+                    raise Exception("Gemini API key is required for analysis. Please set your GEMINI_API_KEY environment variable.")
+                
+                analyzed_results = self.analyze_menu_with_gemini_csv(csv_data)
             else:
-                # If CSV generation fails, still try to extract nutrition data for analysis
-                print("CSV generation failed, extracting nutrition data directly for analysis...")
-                all_nutrition_data = []
-                
-                # Extract nutrition data for all items
-                for meal_name, items in daily_menu.items():
-                    if not items:
-                        continue
-                    if self.debug:
-                        print(f"Processing {meal_name} with {len(items)} items")
-                    for food_name, url in items.items():
-                        if url and url != '#':
-                            try:
-                                nutrition_data = self.nutrition_extractor.extract_nutrition_data(url)
-                                nutrition_data['meal'] = meal_name
-                                nutrition_data['campus'] = self.campus_key
-                                all_nutrition_data.append(nutrition_data)
-                                if self.debug:
-                                    print(f"  Added {food_name} to {meal_name}")
-                                time.sleep(0.1)  # Small delay
-                            except Exception as e:
-                                if self.debug:
-                                    print(f"Error extracting nutrition for {food_name}: {e}")
-                                continue
-                
-                if all_nutrition_data:
-                    # Use AI to analyze the extracted nutrition data
-                    analyzed_results = self.analyze_menu_with_gemini_csv(all_nutrition_data) if self.gemini_api_key else self.analyze_menu_local_from_csv(all_nutrition_data)
-                else:
-                    # Final fallback to original method
-                    analyzed_results = self.analyze_menu_with_gemini(daily_menu) if self.gemini_api_key else self.analyze_menu_local(daily_menu)
+                raise Exception("CSV generation failed. Unable to extract nutrition data for analysis.")
         else:
-            # Use original method if nutrition extraction is disabled
-            analyzed_results = self.analyze_menu_with_gemini(daily_menu) if self.gemini_api_key else self.analyze_menu_local(daily_menu)
+            raise Exception("Nutrition extraction is required for analysis. Please enable extract_nutrition=True.")
         
         final_results = {}
         for meal, items in analyzed_results.items():
@@ -550,9 +554,44 @@ class MenuAnalyzer:
         # Extract nutrition data for displayed recommendations
         if self.extract_nutrition:
             enhanced_results = self.enhance_recommendations_with_nutrition(final_results, daily_menu)
+            # Log analysis metrics
+            self.log_analysis_metrics(enhanced_results, time.time() - start_time)
             return enhanced_results
         
+        # Log analysis metrics
+        self.log_analysis_metrics(final_results, time.time() - start_time)
         return final_results
+    
+    def log_analysis_metrics(self, results: Dict[str, List], analysis_time: float):
+        """Log analysis performance for improvement"""
+        import json
+        metrics = {
+            'analysis_time': analysis_time,
+            'total_items_analyzed': len(self.nutrition_data) if hasattr(self, 'nutrition_data') else 0,
+            'avg_score_by_meal': {},
+            'score_distribution': {},
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        for meal, items in results.items():
+            if meal != '_csv_path' and isinstance(items, list):
+                scores = [item[1] for item in items if len(item) > 1]
+                if scores:
+                    metrics['avg_score_by_meal'][meal] = sum(scores) / len(scores)
+                    metrics['score_distribution'][meal] = {
+                        'min': min(scores),
+                        'max': max(scores),
+                        'range': max(scores) - min(scores),
+                        'count': len(scores)
+                    }
+        
+        # Log to file for analysis
+        try:
+            with open('analysis_metrics.json', 'a') as f:
+                f.write(json.dumps(metrics) + '\n')
+        except Exception as e:
+            if self.debug:
+                print(f"Could not log metrics: {e}")
     
     def generate_nutrition_csv(self, daily_menu: Dict[str, Dict[str, str]]) -> str:
         """Generate CSV file with nutrition data for all menu items"""
@@ -676,21 +715,40 @@ class MenuAnalyzer:
         
         # Create a comprehensive prompt with all nutrition data
         prompt = f"""
-        Analyze the complete nutrition data below. Your goal is to {priority_instruction}. My restrictions are: {restrictions_text}
-        
-        For EACH meal, select the top 5 healthiest options based on the detailed macronutrient data provided.
-        Consider: protein content, healthy fats, fiber, sodium levels, calorie density, and overall nutritional balance.
-        
-        IMPORTANT: For Lunch and Dinner, if a snack item (like cookies, smoothies, ice cream, etc.) makes it into the top 5, add it as a 6th item so there are always 5 main meal items plus the snack. This ensures users get 5 substantial meal options plus any beneficial snacks.
-        
-        Return your response as a single, valid JSON object with keys "Breakfast", "Lunch", "Dinner". 
-        Each value should be a list of objects, each with "food_name", "score" (0-100), and "reasoning".
-        
+        You are a nutrition expert analyzing college dining menu items with complete macronutrient data. Select the top 5 healthiest options for EACH meal.
+
+        GOAL: {priority_instruction}
+        DIETARY RESTRICTIONS: {restrictions_text}
+
+        SCORING CRITERIA (0-100 points) - Use EXACT nutrition data:
+        - Protein density: Calculate (protein_g * 4) / calories
+          * 30%+ = 35 points, 25%+ = 30 points, 20%+ = 25 points, 15%+ = 15 points
+        - Fiber content: 5g+ = 15 points, 3-4g = 10 points, 1-2g = 5 points
+        - Sodium penalty: Calculate sodium_mg / calories
+          * ≤1mg/cal = +15 points, ≤2mg/cal = +10 points, ≤3mg/cal = +5 points, >5mg/cal = -20 points
+        - Sugar penalty: Calculate (added_sugars_g * 4) / calories
+          * >25% = -15 points, >15% = -10 points, >10% = -5 points, <10% = +5 points
+        - Fat quality: ≤30% saturated = +20 points, ≤50% = +10 points, >50% = -10 points
+        - Calorie density: ≤200 cal = +10 points, ≤400 cal = +5 points, ≥800 cal = -10 points
+        - Micronutrients: Vitamin D = +5 points, Iron ≥2mg = +5 points, Calcium ≥100mg = +5 points
+
+        CRITICAL RULE for Lunch and Dinner:
+        1. Select top 5 MAIN MEAL items (sandwiches, entrees, salads, soups)
+        2. If ANY snack item scores in top 5, add it as item #6
+        3. SNACK IDENTIFIERS: smoothie, cookie, ice cream, muffin, danish, donut, milkshake, parfait
+        4. Result: Always 5 main meals + 0-1 snack = 5-6 total items
+
+        PRIORITIZE: Whole foods over processed, vegetables, lean proteins, balanced macronutrients.
+
+        Return ONLY a valid JSON object with keys "Breakfast", "Lunch", "Dinner".
+        Each value should be a list of objects with "food_name", "score" (0-100), and "reasoning".
+
         Complete Nutrition Data:
         {json.dumps(meal_data, indent=2)}
         """
         
         try:
+            if self.debug: print("🤖 Using AI (Gemini) analysis for detailed nutrition scoring...")
             response = self.session.post(self.gemini_url, headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}]})
             response.raise_for_status()
             data = response.json()
@@ -712,38 +770,13 @@ class MenuAnalyzer:
                     meal_results.append((food_name, item_info.get("score"), item_info.get("reasoning"), url))
                 meal_results.sort(key=lambda x: x[1], reverse=True)
                 results[meal] = meal_results
+            
+            if self.debug: print("✅ AI analysis completed successfully!")
             return results
         except Exception as e:
-            if self.debug: print(f"Gemini CSV analysis failed: {e}. Falling back to local analysis.")
-            return self.analyze_menu_local_from_csv(csv_data)
+            if self.debug: print(f"❌ AI analysis failed: {e}")
+            raise Exception(f"AI analysis failed: {e}. Please check your Gemini API key and try again.")
 
-    def analyze_menu_local_from_csv(self, csv_data: List[Dict[str, any]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
-        """Fallback local analysis using CSV nutrition data"""
-        # Group by meal
-        meal_data = {}
-        for item in csv_data:
-            meal = item.get('meal', 'Unknown')
-            if meal not in meal_data:
-                meal_data[meal] = []
-            meal_data[meal].append(item)
-        
-        if self.debug:
-            print(f"Grouped nutrition data by meal: {list(meal_data.keys())}")
-            for meal, items in meal_data.items():
-                print(f"  {meal}: {len(items)} items")
-        
-        results = {}
-        for meal, items in meal_data.items():
-            analyzed_items = []
-            for item in items:
-                score, reasoning = self.calculate_health_score_from_nutrition(item)
-                analyzed_items.append((item.get('food_name', 'Unknown'), score, reasoning, item.get('url', '#')))
-            
-            analyzed_items.sort(key=lambda x: x[1], reverse=True)
-            # Take only top 5 items per meal
-            results[meal] = analyzed_items[:5]
-        
-        return results
 
     def analyze_menu_with_gemini(self, daily_menu: Dict[str, Dict[str, str]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
         exclusions = []
@@ -814,45 +847,6 @@ class MenuAnalyzer:
             filtered_fallback[meal] = filtered_items[:5]
         return filtered_fallback
 
-    def analyze_menu_local(self, daily_menu: Dict[str, Dict[str, str]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
-        results = {}
-        for meal, items in daily_menu.items():
-            if not items:  # Handle empty meals
-                results[meal] = []
-            else:
-                analyzed_items = self.analyze_food_health_local_list(items)
-                analyzed_items.sort(key=lambda x: x[1], reverse=True)
-                results[meal] = analyzed_items
-        return results
-
-    def analyze_food_health_local_list(self, food_items: Dict[str, str]) -> List[Tuple[str, int, str, str]]:
-        health_scores = []
-        
-        for item, url in food_items.items():
-            # First, try to extract nutrition data for accurate scoring
-            nutrition_data = None
-            if url and url != '#':
-                try:
-                    nutrition_data = self.nutrition_extractor.extract_nutrition_data(url)
-                    # Add a small delay to be respectful to the server
-                    time.sleep(0.1)
-                except Exception as e:
-                    if self.debug:
-                        print(f"Error extracting nutrition for {item}: {e}")
-                    nutrition_data = self.nutrition_extractor._get_empty_nutrition_data(url)
-            else:
-                nutrition_data = self.nutrition_extractor._get_empty_nutrition_data('#')
-            
-            # Calculate health score based on macronutrient data
-            if nutrition_data and nutrition_data.get('calories', 0) > 0:
-                score, reasoning = self.calculate_health_score_from_nutrition(nutrition_data)
-            else:
-                # Fallback to keyword-based scoring if no nutrition data
-                score, reasoning = self._fallback_keyword_scoring(item)
-            
-            health_scores.append((item, score, reasoning, url))
-        
-        return health_scores
     
     def calculate_health_score_from_nutrition(self, nutrition_data: Dict[str, any]) -> Tuple[int, str]:
         """Calculate health score based on actual macronutrient data"""
@@ -870,16 +864,19 @@ class MenuAnalyzer:
         score = 50  # Base score
         reasoning_parts = []
         
-        # Protein scoring (0-30 points)
+        # Enhanced protein scoring (0-35 points)
         protein_per_calorie = (protein * 4) / calories if calories > 0 else 0
-        if protein_per_calorie >= 0.25:  # 25%+ calories from protein
+        if protein_per_calorie >= 0.30:  # 30%+ calories from protein
+            score += 35
+            reasoning_parts.append("Outstanding protein density")
+        elif protein_per_calorie >= 0.25:  # 25%+ calories from protein
             score += 30
             reasoning_parts.append("Excellent protein density")
         elif protein_per_calorie >= 0.20:  # 20%+ calories from protein
-            score += 20
+            score += 25
             reasoning_parts.append("Good protein density")
         elif protein_per_calorie >= 0.15:  # 15%+ calories from protein
-            score += 10
+            score += 15
             reasoning_parts.append("Moderate protein density")
         else:
             score -= 10
@@ -914,7 +911,7 @@ class MenuAnalyzer:
                 score -= 5
                 reasoning_parts.append("Low fiber content")
         
-        # Sodium scoring (0-15 points)
+        # Enhanced sodium scoring (0-15 points, stricter penalties)
         sodium_per_calorie = sodium / calories if calories > 0 else 0
         if sodium_per_calorie <= 1.0:  # 1mg per calorie or less
             score += 15
@@ -925,9 +922,12 @@ class MenuAnalyzer:
         elif sodium_per_calorie <= 3.0:  # 3mg per calorie or less
             score += 5
             reasoning_parts.append("Acceptable sodium")
-        else:
+        elif sodium_per_calorie <= 5.0:  # 5mg per calorie or less
             score -= 10
             reasoning_parts.append("High sodium")
+        else:
+            score -= 20
+            reasoning_parts.append("Very high sodium")
         
         # Calorie density bonus/penalty (0-10 points)
         if calories <= 200:
@@ -939,6 +939,51 @@ class MenuAnalyzer:
         elif calories >= 800:
             score -= 10
             reasoning_parts.append("High calorie density")
+        
+        # Sugar penalty system
+        added_sugars = nutrition_data.get('added_sugars_g', 0)
+        if added_sugars > 0:
+            sugar_percentage = (added_sugars * 4) / calories if calories > 0 else 0
+            if sugar_percentage >= 0.25:  # 25%+ calories from added sugar
+                score -= 15
+                reasoning_parts.append("Very high added sugar")
+            elif sugar_percentage >= 0.15:  # 15%+ calories from added sugar
+                score -= 10
+                reasoning_parts.append("High added sugar")
+            elif sugar_percentage >= 0.10:  # 10%+ calories from added sugar
+                score -= 5
+                reasoning_parts.append("Moderate added sugar")
+            else:
+                score += 5
+                reasoning_parts.append("Low added sugar")
+        
+        # Micronutrient bonuses
+        vitamin_d = nutrition_data.get('vitamin_d_mcg', 0)
+        iron = nutrition_data.get('iron_mg', 0)
+        calcium = nutrition_data.get('calcium_mg', 0)
+        
+        if vitamin_d > 0:
+            score += 5
+            reasoning_parts.append("Contains vitamin D")
+        if iron >= 2:
+            score += 5
+            reasoning_parts.append("Good iron content")
+        if calcium >= 100:
+            score += 5
+            reasoning_parts.append("Good calcium content")
+        
+        # Vegetarian-specific bonuses
+        if self.vegetarian:
+            ingredients = nutrition_data.get('ingredients', '').lower()
+            if 'tofu' in ingredients:
+                score += 10
+                reasoning_parts.append("Plant-based protein (tofu)")
+            elif 'beans' in ingredients:
+                score += 8
+                reasoning_parts.append("Plant-based protein (beans)")
+            elif 'quinoa' in ingredients:
+                score += 8
+                reasoning_parts.append("Complete plant protein (quinoa)")
         
         # Protein prioritization bonus
         if self.prioritize_protein and protein_per_calorie >= 0.20:

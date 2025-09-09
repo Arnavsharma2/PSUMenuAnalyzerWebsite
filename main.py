@@ -758,11 +758,51 @@ class MenuAnalyzer:
                     meal_results.append((food_name, item_info.get("score"), item_info.get("reasoning"), url))
                 meal_results.sort(key=lambda x: x[1], reverse=True)
                 results[meal] = meal_results
+            
+            # Recalculate health scores for top items using local analysis for consistency
+            if self.debug: print("🔄 Recalculating health scores for top items using local analysis...")
+            recalculated_results = self._recalculate_top_items_scores(results, csv_data)
             if self.debug: print("✅ AI analysis completed successfully!")
-            return results
+            return recalculated_results
         except Exception as e:
             if self.debug: print(f"❌ AI analysis failed: {e}. Falling back to local analysis.")
             return self.analyze_menu_local_from_csv(csv_data)
+
+    def _recalculate_top_items_scores(self, ai_results: Dict[str, List[Tuple[str, int, str, str]]], csv_data: List[Dict[str, any]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
+        """Recalculate health scores for top AI-selected items using local analysis for consistency"""
+        recalculated_results = {}
+        
+        for meal, items in ai_results.items():
+            if meal == '_csv_path':
+                recalculated_results[meal] = items
+                continue
+                
+            recalculated_items = []
+            for food_name, ai_score, ai_reasoning, url in items:
+                # Find the nutrition data for this item
+                nutrition_data = None
+                for item in csv_data:
+                    if item.get('food_name') == food_name and item.get('meal') == meal:
+                        nutrition_data = item
+                        break
+                
+                if nutrition_data:
+                    # Recalculate using local analysis
+                    local_score, local_reasoning = self.calculate_health_score_from_nutrition(nutrition_data)
+                    recalculated_items.append((food_name, local_score, local_reasoning, url))
+                    if self.debug:
+                        print(f"  {food_name}: AI={ai_score} → Local={local_score}")
+                else:
+                    # Keep original if no nutrition data found
+                    recalculated_items.append((food_name, ai_score, ai_reasoning, url))
+                    if self.debug:
+                        print(f"  {food_name}: No nutrition data, keeping AI score={ai_score}")
+            
+            # Sort by recalculated scores
+            recalculated_items.sort(key=lambda x: x[1], reverse=True)
+            recalculated_results[meal] = recalculated_items
+        
+        return recalculated_results
 
     def analyze_menu_local_from_csv(self, csv_data: List[Dict[str, any]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
         """Fallback local analysis using CSV nutrition data"""

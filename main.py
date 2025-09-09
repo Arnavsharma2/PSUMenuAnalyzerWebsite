@@ -681,6 +681,8 @@ class MenuAnalyzer:
         For EACH meal, select the top 5 healthiest options based on the detailed macronutrient data provided.
         Consider: protein content, healthy fats, fiber, sodium levels, calorie density, and overall nutritional balance.
         
+        IMPORTANT: For Lunch and Dinner, if a snack item (like cookies, smoothies, ice cream, etc.) makes it into the top 5, add it as a 6th item so there are always 5 main meal items plus the snack. This ensures users get 5 substantial meal options plus any beneficial snacks.
+        
         Return your response as a single, valid JSON object with keys "Breakfast", "Lunch", "Dinner". 
         Each value should be a list of objects, each with "food_name", "score" (0-100), and "reasoning".
         

@@ -335,8 +335,7 @@
                     <div class="progress-bar mt-4">
                         <div class="progress-fill" style="width: 0%"></div>
                     </div>
-                    <p class="mt-2 text-sm text-gray-500">This may take 1-2 minutes as we extract detailed nutrition data from each menu item...</p>
-                    <p class="mt-1 text-xs text-gray-400">We're scraping nutrition pages, analyzing with AI, and calculating health scores for every food item.</p>
+                    <p class="mt-2 text-sm text-gray-500">This may take 1-2 minutes as we extract detailed nutrition data...</p>
                 ` : '';
                 
                 resultsContainer.innerHTML = `
@@ -439,13 +438,13 @@
             const debouncedAnalyze = debounce(async () => {
                 const preferences = getPreferences();
                 
-                showLoadingState(`Analyzing menu and extracting nutrition data for ${campusSelect.options[campusSelect.selectedIndex].text}... (This may take 1-2 minutes)`, true);
+                showLoadingState(`Analyzing menu and extracting nutrition data for ${campusSelect.options[campusSelect.selectedIndex].text}...`, true);
                 
                 // Simulate progress updates
                 let progressStep = 0;
                 const progressInterval = setInterval(() => {
                     progressStep += 1;
-                    showProgress(progressStep, 20);
+                    showProgress(progressStep, 50);
                 }, 5000);
 
                 try {

@@ -743,6 +743,85 @@ class MenuAnalyzer:
         
         return results
 
+    def run_quick_analysis(self) -> Dict[str, List[Tuple[str, int, str, str]]]:
+        """Quick analysis using only food names with AI"""
+        if self.debug: 
+            print(f"Running quick analysis for campus: {self.campus_key}")
+        
+        form_options = self.get_initial_form_data()
+        if not form_options:
+            return {"error": "Could not fetch menu data"}
+        
+        # Get today's date
+        today_str_key = datetime.now().strftime('%A, %B %d')
+        date_value = form_options.get(today_str_key) or form_options.get(today_str_key.lower())
+        
+        if not date_value:
+            return {"error": f"Could not find menu for today ({today_str_key})"}
+        
+        # Get menu data
+        menu_data = self.get_menu_data(date_value)
+        if not menu_data:
+            return {"error": "Could not fetch menu data"}
+        
+        # Prepare food names for AI analysis
+        meal_data = {}
+        for item in menu_data:
+            meal = item.get('meal', 'Unknown')
+            if meal not in meal_data:
+                meal_data[meal] = []
+            meal_data[meal].append(item.get('food_name', 'Unknown'))
+        
+        # AI analysis of food names only
+        exclusions = []
+        if self.exclude_beef: exclusions.append("No beef.")
+        if self.exclude_pork: exclusions.append("No pork.")
+        if self.vegetarian: exclusions.append("Only vegetarian items (includes eggs).")
+        if self.vegan: exclusions.append("Only vegan items (no animal products including eggs and dairy).")
+        restrictions_text = " ".join(exclusions) if exclusions else "None."
+
+        priority_instruction = ("prioritize PROTEIN content" if self.prioritize_protein else "prioritize a BALANCE of healthy options")
+        
+        prompt = f"""
+        Analyze the menu items below and select the top 5 healthiest options for EACH meal based on food names only.
+        Your goal is to {priority_instruction}. My restrictions are: {restrictions_text}
+        
+        Consider: protein content, healthy preparation methods, whole foods, vegetables, lean proteins, and overall nutritional value based on the food names.
+        
+        Return your response as a single, valid JSON object with keys "Breakfast", "Lunch", "Dinner". 
+        Each value should be a list of objects, each with "food_name", "score" (0-100), and "reasoning".
+        
+        Menu Items by Meal:
+        {json.dumps(meal_data, indent=2)}
+        """
+        
+        try:
+            response = self.session.post(self.gemini_url, headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}]})
+            response.raise_for_status()
+            data = response.json()
+            text_response = data["candidates"][0]["content"]["parts"][0]["text"]
+            json_str = re.search(r'\{.*\}', text_response, re.DOTALL).group(0)
+            parsed_json = json.loads(json_str)
+
+            results = {}
+            for meal, analyzed_items in parsed_json.items():
+                meal_results = []
+                for item_info in analyzed_items:
+                    food_name = item_info.get("food_name")
+                    url = '#'
+                    for item in menu_data:
+                        if item.get('food_name') == food_name and item.get('meal') == meal:
+                            url = item.get('url', '#')
+                            break
+                    meal_results.append((food_name, item_info.get("score"), item_info.get("reasoning"), url))
+                meal_results.sort(key=lambda x: x[1], reverse=True)
+                results[meal] = meal_results[:5]  # Limit to top 5 items
+            
+            return results
+        except Exception as e:
+            if self.debug: print(f"Quick analysis failed: {e}. Falling back to local analysis.")
+            return self.analyze_menu_local(menu_data)
+
     def analyze_menu_with_gemini(self, daily_menu: Dict[str, Dict[str, str]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
         exclusions = []
         if self.exclude_beef: exclusions.append("No beef.")
@@ -999,7 +1078,8 @@ def analyze():
         exclude_beef = data.get('exclude_beef', False)
         exclude_pork = data.get('exclude_pork', False)
         prioritize_protein = data.get('prioritize_protein', False)
-        extract_nutrition = data.get('extract_nutrition', False)
+        analysis_type = data.get('analysis_type', 'detailed')
+        extract_nutrition = analysis_type == 'detailed'  # Only extract nutrition for detailed analysis
         
         # Validate that vegan and vegetarian aren't both selected
         if vegan and vegetarian:
@@ -1016,11 +1096,15 @@ def analyze():
             vegetarian=vegetarian,
             vegan=vegan,
             prioritize_protein=prioritize_protein,
-            extract_nutrition=True,  # Always extract nutrition for recommendations
+            extract_nutrition=extract_nutrition,
             debug=True
         )
         
-        recommendations = analyzer.run_analysis()
+        # Choose analysis method based on type
+        if analysis_type == 'quick':
+            recommendations = analyzer.run_quick_analysis()
+        else:
+            recommendations = analyzer.run_analysis()
         print(f"Returning recommendations: {recommendations}")
         
         return jsonify(recommendations)

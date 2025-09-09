@@ -254,6 +254,44 @@
                     <p class="mt-1 text-xs text-gray-500">Choose the dining location you want to analyze</p>
                 </div>
 
+                <!-- Analysis Type Selection -->
+                <div class="mb-8">
+                    <h3 class="text-2xl font-bold mb-6 text-gray-900">Analysis Type</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Quick Analysis Option -->
+                        <div id="quick-analysis-option" class="flex items-center justify-between bg-gradient-to-r from-green-50 to-emerald-50 p-6 rounded-2xl border border-green-100 hover:shadow-md transition-all duration-200 cursor-pointer" onclick="selectAnalysisType('quick')">
+                            <div class="flex items-center">
+                                <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center mr-4">
+                                    <span class="text-green-600 text-lg">⚡</span>
+                                </div>
+                                <div>
+                                    <span class="font-semibold text-gray-900 text-lg">Quick Analysis</span>
+                                    <p class="text-sm text-gray-600">AI analyzes food names only (30-60 seconds)</p>
+                                </div>
+                            </div>
+                            <div class="w-6 h-6 border-2 border-green-300 rounded-full flex items-center justify-center" id="quick-analysis-indicator">
+                                <div class="w-3 h-3 bg-green-500 rounded-full hidden" id="quick-analysis-dot"></div>
+                            </div>
+                        </div>
+                        
+                        <!-- Detailed Analysis Option -->
+                        <div id="detailed-analysis-option" class="flex items-center justify-between bg-gradient-to-r from-blue-50 to-cyan-50 p-6 rounded-2xl border border-blue-100 hover:shadow-md transition-all duration-200 cursor-pointer" onclick="selectAnalysisType('detailed')">
+                            <div class="flex items-center">
+                                <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mr-4">
+                                    <span class="text-blue-600 text-lg">🔬</span>
+                                </div>
+                                <div>
+                                    <span class="font-semibold text-gray-900 text-lg">Detailed Analysis</span>
+                                    <p class="text-sm text-gray-600">Full macronutrient analysis (1-2 minutes)</p>
+                                </div>
+                            </div>
+                            <div class="w-6 h-6 border-2 border-blue-300 rounded-full flex items-center justify-center" id="detailed-analysis-indicator">
+                                <div class="w-3 h-3 bg-blue-500 rounded-full" id="detailed-analysis-dot"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <!-- Vegetarian Toggle -->
                     <div id="vegetarian-pref" class="preference-item flex items-center justify-between bg-gradient-to-r from-green-50 to-emerald-50 p-6 rounded-2xl border border-green-100 hover:shadow-md transition-all duration-200">
@@ -417,6 +455,43 @@
     </div>
 
     <script>
+        // Analysis type selection
+        let selectedAnalysisType = 'detailed'; // Default to detailed analysis
+        
+        function selectAnalysisType(type) {
+            selectedAnalysisType = type;
+            
+            // Update visual indicators
+            const quickOption = document.getElementById('quick-analysis-option');
+            const detailedOption = document.getElementById('detailed-analysis-option');
+            const quickDot = document.getElementById('quick-analysis-dot');
+            const detailedDot = document.getElementById('detailed-analysis-dot');
+            const quickIndicator = document.getElementById('quick-analysis-indicator');
+            const detailedIndicator = document.getElementById('detailed-analysis-indicator');
+            
+            if (type === 'quick') {
+                // Select quick analysis
+                quickOption.classList.add('ring-2', 'ring-green-300');
+                detailedOption.classList.remove('ring-2', 'ring-blue-300');
+                quickDot.classList.remove('hidden');
+                detailedDot.classList.add('hidden');
+                quickIndicator.classList.add('border-green-500');
+                detailedIndicator.classList.remove('border-blue-500');
+                quickIndicator.classList.remove('border-gray-300');
+                detailedIndicator.classList.add('border-gray-300');
+            } else {
+                // Select detailed analysis
+                detailedOption.classList.add('ring-2', 'ring-blue-300');
+                quickOption.classList.remove('ring-2', 'ring-green-300');
+                detailedDot.classList.remove('hidden');
+                quickDot.classList.add('hidden');
+                detailedIndicator.classList.add('border-blue-500');
+                quickIndicator.classList.remove('border-green-500');
+                detailedIndicator.classList.remove('border-gray-300');
+                quickIndicator.classList.add('border-gray-300');
+            }
+        }
+
         // Main application logic
         document.addEventListener('DOMContentLoaded', function () {
             const analyzeBtn = document.getElementById('analyze-btn');
@@ -426,6 +501,9 @@
             const veganToggle = document.getElementById('vegan');
             const beefPref = document.getElementById('beef-pref');
             const porkPref = document.getElementById('pork-pref');
+            
+            // Initialize with detailed analysis selected
+            selectAnalysisType('detailed');
 
             // Utility functions
             const debounce = (func, delay) => {
@@ -441,11 +519,18 @@
                     <div class="progress-bar mt-4">
                         <div class="progress-fill" style="width: 0%"></div>
                     </div>
-                    <p class="mt-2 text-sm text-gray-500">This may take 1-2 minutes as we extract detailed nutrition data...</p>
+                    <p class="mt-2 text-sm text-gray-500" id="loading-description">
+                        ${selectedAnalysisType === 'quick' ? 'This should take 30-60 seconds as we analyze food names...' : 'This may take 1-2 minutes as we extract detailed nutrition data...'}
+                    </p>
                     <div id="fun-facts" class="mt-4 text-center">
                         <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-2">
                             <p class="text-sm text-blue-800 font-medium">💡 Fun Fact:</p>
                             <p class="text-xs text-blue-700" id="fun-fact-text">Loading interesting nutrition facts...</p>
+                        </div>
+                        <div class="mt-2">
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${selectedAnalysisType === 'quick' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}">
+                                ${selectedAnalysisType === 'quick' ? '⚡ Quick Analysis' : '🔬 Detailed Analysis'}
+                            </span>
                         </div>
                         <div class="flex justify-center space-x-2">
                             <div class="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
@@ -556,7 +641,8 @@
                     vegan: document.getElementById('vegan').checked,
                     exclude_beef: document.getElementById('exclude-beef').checked,
                     exclude_pork: document.getElementById('exclude-pork').checked,
-                    prioritize_protein: document.getElementById('prioritize-protein').checked
+                    prioritize_protein: document.getElementById('prioritize-protein').checked,
+                    analysis_type: selectedAnalysisType
                 };
             };
 
@@ -606,18 +692,21 @@
             const debouncedAnalyze = debounce(async () => {
                 const preferences = getPreferences();
                 
-                showLoadingState(`Analyzing menu and extracting nutrition data for ${campusSelect.options[campusSelect.selectedIndex].text}...`, true);
+                const analysisTypeText = selectedAnalysisType === 'quick' ? 'Quick analysis' : 'Detailed analysis with nutrition data';
+                showLoadingState(`${analysisTypeText} for ${campusSelect.options[campusSelect.selectedIndex].text}...`, true);
                 
                 // Start fun facts rotation
                 startFunFacts();
                 factInterval = setInterval(startFunFacts, 3000); // Change fact every 3 seconds
                 
-                // Simulate progress updates
+                // Simulate progress updates based on analysis type
                 let progressStep = 0;
+                const totalSteps = selectedAnalysisType === 'quick' ? 10 : 20;
+                const intervalTime = selectedAnalysisType === 'quick' ? 2000 : 5000;
                 const progressInterval = setInterval(() => {
                     progressStep += 1;
-                    showProgress(progressStep, 20);
-                }, 5000);
+                    showProgress(progressStep, totalSteps);
+                }, intervalTime);
 
                 try {
                     // Auto-detect if running locally or on Railway

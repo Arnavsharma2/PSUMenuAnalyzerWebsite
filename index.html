@@ -335,7 +335,8 @@
                     <div class="progress-bar mt-4">
                         <div class="progress-fill" style="width: 0%"></div>
                     </div>
-                    <p class="mt-2 text-sm text-gray-500">This may take 1-2 minutes as we extract detailed nutrition data...</p>
+                    <p class="mt-2 text-sm text-gray-500">This may take 3-4 minutes as we extract detailed nutrition data...</p>
+                    <p class="mt-1 text-sm text-blue-600 font-medium progress-message">Initializing analysis...</p>
                 ` : '';
                 
                 resultsContainer.innerHTML = `
@@ -440,12 +441,29 @@
                 
                 showLoadingState(`Analyzing menu and extracting nutrition data for ${campusSelect.options[campusSelect.selectedIndex].text}...`, true);
                 
-                // Simulate progress updates
+                // Simulate progress updates for 3-4 minute process
                 let progressStep = 0;
+                const totalSteps = 40; // Increased steps for more granular progress
                 const progressInterval = setInterval(() => {
                     progressStep += 1;
-                    showProgress(progressStep, 20);
-                }, 5000);
+                    showProgress(progressStep, totalSteps);
+                    
+                    // Update progress message based on current step
+                    const progressMessage = document.querySelector('.progress-message');
+                    if (progressMessage) {
+                        if (progressStep < 10) {
+                            progressMessage.textContent = 'Fetching menu data...';
+                        } else if (progressStep < 20) {
+                            progressMessage.textContent = 'Extracting nutrition information...';
+                        } else if (progressStep < 30) {
+                            progressMessage.textContent = 'Analyzing nutritional content...';
+                        } else if (progressStep < 35) {
+                            progressMessage.textContent = 'Generating recommendations...';
+                        } else {
+                            progressMessage.textContent = 'Finalizing results...';
+                        }
+                    }
+                }, 4500); // Slightly faster intervals for smoother progress
 
                 try {
                     // Auto-detect if running locally or on Railway

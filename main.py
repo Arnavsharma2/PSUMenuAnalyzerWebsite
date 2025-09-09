@@ -481,6 +481,7 @@ class MenuAnalyzer:
         
         # Generate nutrition CSV first to get complete data
         if self.extract_nutrition:
+            if self.debug: print("📊 Generating nutrition CSV for detailed analysis...")
             csv_path = self.generate_nutrition_csv(daily_menu)
             if csv_path:
                 # Load the CSV data for AI analysis
@@ -488,8 +489,15 @@ class MenuAnalyzer:
                 df = pd.read_csv(csv_path)
                 csv_data = df.to_dict('records')
                 
+                if self.debug: print(f"📈 CSV generated with {len(csv_data)} nutrition records")
+                
                 # Use AI to analyze the complete nutrition data
-                analyzed_results = self.analyze_menu_with_gemini_csv(csv_data) if self.gemini_api_key else self.analyze_menu_local_from_csv(csv_data)
+                if self.gemini_api_key:
+                    if self.debug: print("🔑 Gemini API key available - attempting AI analysis...")
+                    analyzed_results = self.analyze_menu_with_gemini_csv(csv_data)
+                else:
+                    if self.debug: print("⚠️ No Gemini API key - using local analysis...")
+                    analyzed_results = self.analyze_menu_local_from_csv(csv_data)
             else:
                 # If CSV generation fails, still try to extract nutrition data for analysis
                 print("CSV generation failed, extracting nutrition data directly for analysis...")
@@ -692,22 +700,35 @@ class MenuAnalyzer:
         - Healthy fats (mono/polyunsaturated): +10-15 points
         - Saturated fats: -5-15 points
         - Trans fats: -20-30 points
+        - Added sugars (0-5g): +5-10 points
+        - Added sugars (5-15g): 0 points
+        - Added sugars (15-25g): -10-15 points
+        - Added sugars (25g+): -20-30 points
         - Calorie density (calories per serving): Lower is better
+        - Whole food ingredients: +5-15 points
+        - Highly processed ingredients: -5-15 points
         - Overall nutritional balance: +10-25 points
 
         PRIORITY FACTORS:
         1. Protein content and quality
         2. Fiber content
         3. Sodium levels (lower is better)
-        4. Healthy fat profile
-        5. Calorie density
-        6. Overall nutritional completeness
+        4. Added sugar content (lower is better)
+        5. Healthy fat profile
+        6. Ingredient quality (whole foods preferred)
+        7. Calorie density
+        8. Overall nutritional completeness
+
+        INGREDIENT QUALITY ASSESSMENT:
+        - Give additional points for items made primarily from whole-food ingredients (e.g., fresh vegetables, lean meats, whole grains, natural dairy)
+        - Penalize items with long lists of additives, preservatives, or highly-processed ingredients
+        - Consider the ingredient list when scoring - prioritize natural, minimally processed foods
 
         Return ONLY a valid JSON object with this exact structure:
         {{
-            "Breakfast": [{{"food_name": "Item Name", "score": 85, "reasoning": "High protein (25g), low sodium (200mg), good fiber (4g)"}}],
-            "Lunch": [{{"food_name": "Item Name", "score": 90, "reasoning": "Excellent protein (30g), low sodium (150mg), high fiber (6g)"}}],
-            "Dinner": [{{"food_name": "Item Name", "score": 75, "reasoning": "Good protein (18g), moderate sodium (400mg)"}}]
+            "Breakfast": [{{"food_name": "Item Name", "score": 85, "reasoning": "High protein (25g), low sodium (200mg), good fiber (4g), low added sugar (3g)"}}],
+            "Lunch": [{{"food_name": "Item Name", "score": 90, "reasoning": "Excellent protein (30g), low sodium (150mg), high fiber (6g), whole food ingredients"}}],
+            "Dinner": [{{"food_name": "Item Name", "score": 75, "reasoning": "Good protein (18g), moderate sodium (400mg), moderate added sugar (12g)"}}]
         }}
 
         Complete Nutrition Data:
@@ -715,6 +736,7 @@ class MenuAnalyzer:
         """
         
         try:
+            if self.debug: print("🤖 Using AI (Gemini) analysis for detailed nutrition scoring...")
             response = self.session.post(self.gemini_url, headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}]})
             response.raise_for_status()
             data = response.json()
@@ -736,13 +758,15 @@ class MenuAnalyzer:
                     meal_results.append((food_name, item_info.get("score"), item_info.get("reasoning"), url))
                 meal_results.sort(key=lambda x: x[1], reverse=True)
                 results[meal] = meal_results
+            if self.debug: print("✅ AI analysis completed successfully!")
             return results
         except Exception as e:
-            if self.debug: print(f"Gemini CSV analysis failed: {e}. Falling back to local analysis.")
+            if self.debug: print(f"❌ AI analysis failed: {e}. Falling back to local analysis.")
             return self.analyze_menu_local_from_csv(csv_data)
 
     def analyze_menu_local_from_csv(self, csv_data: List[Dict[str, any]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
         """Fallback local analysis using CSV nutrition data"""
+        if self.debug: print("🧮 Using local analysis for detailed nutrition scoring...")
         # Group by meal
         meal_data = {}
         for item in csv_data:
@@ -801,6 +825,7 @@ class MenuAnalyzer:
             # Take only top 5 items per meal
             results[meal] = analyzed_items[:5]
         
+        if self.debug: print("✅ Local analysis completed successfully!")
         return results
 
     def run_quick_analysis(self) -> Dict[str, List[Tuple[str, int, str, str]]]:
@@ -1105,21 +1130,19 @@ class MenuAnalyzer:
                 score -= 10
                 reasoning_parts.append("High saturated fat")
         
-        # Fiber scoring (0-15 points)
-        if carbs > 0:
-            fiber_ratio = fiber / carbs
-            if fiber_ratio >= 0.1:  # 10%+ fiber
-                score += 15
-                reasoning_parts.append("High fiber content")
-            elif fiber_ratio >= 0.05:  # 5%+ fiber
-                score += 10
-                reasoning_parts.append("Good fiber content")
-            elif fiber_ratio >= 0.02:  # 2%+ fiber
-                score += 5
-                reasoning_parts.append("Moderate fiber content")
-            else:
-                score -= 5
-                reasoning_parts.append("Low fiber content")
+        # Fiber scoring (0-15 points) - using absolute grams
+        if fiber >= 5:
+            score += 15
+            reasoning_parts.append("High fiber content")
+        elif fiber >= 3:
+            score += 10
+            reasoning_parts.append("Good fiber content")
+        elif fiber >= 1:
+            score += 5
+            reasoning_parts.append("Moderate fiber content")
+        else:
+            score -= 5
+            reasoning_parts.append("Low fiber content")
         
         # Sodium scoring (0-15 points)
         sodium_per_calorie = sodium / calories if calories > 0 else 0
@@ -1135,6 +1158,23 @@ class MenuAnalyzer:
         else:
             score -= 10
             reasoning_parts.append("High sodium")
+        
+        # Sugar scoring (0-15 points penalty for high sugar)
+        added_sugars = nutrition_data.get('added_sugars_g', 0)
+        if added_sugars > 0:
+            sugar_percentage = (added_sugars * 4) / calories if calories > 0 else 0
+            if sugar_percentage >= 0.25:  # 25%+ calories from added sugar
+                score -= 15
+                reasoning_parts.append("Very high added sugar")
+            elif sugar_percentage >= 0.15:  # 15%+ calories from added sugar
+                score -= 10
+                reasoning_parts.append("High added sugar")
+            elif sugar_percentage >= 0.10:  # 10%+ calories from added sugar
+                score -= 5
+                reasoning_parts.append("Moderate added sugar")
+            else:
+                score += 5
+                reasoning_parts.append("Low added sugar")
         
         # Calorie density bonus/penalty (0-10 points)
         if calories <= 200:

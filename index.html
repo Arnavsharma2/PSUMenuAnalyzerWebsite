@@ -100,17 +100,6 @@
             background-size: 1.5em 1.5em;
             padding-right: 2.5rem;
         }
-        .nutrition-badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 0.75rem;
-            font-weight: 500;
-            margin: 2px;
-        }
-        .nutrition-high { background-color: #dcfce7; color: #166534; }
-        .nutrition-medium { background-color: #fef3c7; color: #92400e; }
-        .nutrition-low { background-color: #fee2e2; color: #991b1b; }
     </style>
 </head>
 <body class="antialiased text-gray-800 p-4 sm:p-6 md:p-8">
@@ -134,10 +123,10 @@
 
         <header class="text-center mb-8">
             <h1 class="text-3xl sm:text-4xl font-bold text-gray-900">Penn State Campus Dining Analyzer</h1>
-            <p class="mt-2 text-lg text-gray-600">Get personalized meal recommendations with detailed nutritional analysis for any Penn State campus dining location.</p>
+            <p class="mt-2 text-lg text-gray-600">Get personalized meal recommendations for any Penn State campus dining location.</p>
         </header>
 
-        <!-- Enhanced Health Score Explanation -->
+        <!-- Health Score Explanation -->
         <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-8 rounded-r-lg">
             <div class="flex">
                 <div class="flex-shrink-0">
@@ -146,11 +135,10 @@
                     </svg>
                 </div>
                 <div class="ml-3">
-                    <h3 class="text-sm font-medium text-blue-800">Enhanced Nutritional Analysis</h3>
+                    <h3 class="text-sm font-medium text-blue-800">Understanding Health Scores</h3>
                     <div class="mt-2 text-sm text-blue-700">
-                        <p class="mb-2">Each menu item receives a comprehensive health score from 0-100 based on:</p>
+                        <p class="mb-2">Each menu item receives a health score from 0-100 based on:</p>
                         <ul class="list-disc list-inside space-y-1">
-                            <li><strong>Detailed Nutritional Data:</strong> Protein, calories, fat, fiber, sodium, and sugar content</li>
                             <li><strong>Protein Content:</strong> High-protein items (chicken, salmon, eggs) score higher</li>
                             <li><strong>Cooking Method:</strong> Grilled, baked, and steamed items score better than fried options</li>
                             <li><strong>Nutritional Balance:</strong> Items with better macro and micronutrient profiles</li>
@@ -213,27 +201,11 @@
                             <span class="slider"></span>
                         </label>
                     </div>
-                    <!-- Vegan Toggle -->
-                    <div id="vegan-pref" class="preference-item flex items-center justify-between bg-gray-50 p-4 rounded-lg">
-                        <span class="font-medium text-gray-700">Vegan (no animal products)</span>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="vegan">
-                            <span class="slider"></span>
-                        </label>
-                    </div>
                     <!-- Protein Priority Toggle -->
                     <div class="flex items-center justify-between bg-gray-50 p-4 rounded-lg">
                         <span class="font-medium text-gray-700">Prioritize High Protein</span>
                         <label class="toggle-switch">
                             <input type="checkbox" id="prioritize-protein">
-                            <span class="slider"></span>
-                        </label>
-                    </div>
-                    <!-- Nutritional Analysis Toggle -->
-                    <div class="flex items-center justify-between bg-gray-50 p-4 rounded-lg">
-                        <span class="font-medium text-gray-700">Extract Nutritional Data</span>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="extract-nutrition" checked>
                             <span class="slider"></span>
                         </label>
                     </div>
@@ -261,22 +233,6 @@
                 </div>
             </div>
 
-            <!-- Nutritional Insights Section -->
-            <div id="nutrition-insights" class="bg-white rounded-lg shadow-md p-6 mb-8 hidden">
-                <h3 class="text-xl font-semibold mb-4 text-gray-800">Nutritional Insights</h3>
-                <div id="insights-content" class="space-y-4">
-                    <!-- Insights will be loaded here -->
-                </div>
-                <div class="mt-4 flex space-x-4">
-                    <button id="view-insights-btn" class="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg">
-                        View Insights
-                    </button>
-                    <button id="download-csv-btn" class="bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded-lg">
-                        Download CSV
-                    </button>
-                </div>
-            </div>
-
             <!-- Results Section -->
             <div id="results-container" class="space-y-8">
                 <!-- Loader and Error Messages will appear here -->
@@ -285,7 +241,7 @@
         
         <footer class="text-center mt-12 text-sm text-gray-500">
             <div class="mb-4">
-                <p>Powered by Gemini AI with enhanced nutritional analysis. This is an independent project and not affiliated with Penn State.</p>
+                <p>Powered by Gemini AI. This is an independent project and not affiliated with Penn State.</p>
             </div>
             
             <!-- Contact & Social Links -->
@@ -351,13 +307,8 @@
             const resultsContainer = document.getElementById('results-container');
             const campusSelect = document.getElementById('campus-select');
             const vegetarianToggle = document.getElementById('vegetarian');
-            const veganToggle = document.getElementById('vegan');
             const beefPref = document.getElementById('beef-pref');
             const porkPref = document.getElementById('pork-pref');
-            const nutritionInsights = document.getElementById('nutrition-insights');
-            const viewInsightsBtn = document.getElementById('view-insights-btn');
-            const downloadCsvBtn = document.getElementById('download-csv-btn');
-            const insightsContent = document.getElementById('insights-content');
 
             // Utility functions
             const debounce = (func, delay) => {
@@ -373,7 +324,7 @@
                     <div class="progress-bar mt-4">
                         <div class="progress-fill" style="width: 0%"></div>
                     </div>
-                    <p class="mt-2 text-sm text-gray-500">This may take 15-30 seconds with nutritional analysis...</p>
+                    <p class="mt-2 text-sm text-gray-500">This may take 10-15 seconds...</p>
                 ` : '';
                 
                 resultsContainer.innerHTML = `
@@ -423,44 +374,24 @@
                 return {
                     campus: campusSelect.value,
                     vegetarian: document.getElementById('vegetarian').checked,
-                    vegan: document.getElementById('vegan').checked,
                     exclude_beef: document.getElementById('exclude-beef').checked,
                     exclude_pork: document.getElementById('exclude-pork').checked,
-                    prioritize_protein: document.getElementById('prioritize-protein').checked,
-                    extract_nutrition: document.getElementById('extract-nutrition').checked
+                    prioritize_protein: document.getElementById('prioritize-protein').checked
                 };
             };
 
             // Load saved preferences
             loadPreferences();
 
-            // Logic to disable beef/pork toggles if vegetarian or vegan is selected
+            // Logic to disable beef/pork toggles if vegetarian is selected
             function updateToggleStates() {
                 const isVegetarian = vegetarianToggle.checked;
-                const isVegan = veganToggle.checked;
                 
-                // If vegan is selected, disable vegetarian
-                if (isVegan) {
-                    vegetarianToggle.checked = false;
-                    vegetarianToggle.disabled = true;
-                } else {
-                    vegetarianToggle.disabled = false;
-                }
+                // Disable beef/pork if vegetarian is selected
+                beefPref.classList.toggle('disabled', isVegetarian);
+                porkPref.classList.toggle('disabled', isVegetarian);
                 
-                // If vegetarian is selected, disable vegan
                 if (isVegetarian) {
-                    veganToggle.checked = false;
-                    veganToggle.disabled = true;
-                } else {
-                    veganToggle.disabled = false;
-                }
-                
-                // Disable beef/pork if either vegetarian or vegan is selected
-                const shouldDisableMeat = isVegetarian || isVegan;
-                beefPref.classList.toggle('disabled', shouldDisableMeat);
-                porkPref.classList.toggle('disabled', shouldDisableMeat);
-                
-                if (shouldDisableMeat) {
                     document.getElementById('exclude-beef').checked = false;
                     document.getElementById('exclude-pork').checked = false;
                 }
@@ -470,7 +401,6 @@
             }
 
             vegetarianToggle.addEventListener('change', updateToggleStates);
-            veganToggle.addEventListener('change', updateToggleStates);
             campusSelect.addEventListener('change', () => savePreferences(getPreferences()));
             
             // Debounced analysis function
@@ -483,7 +413,7 @@
                 let progressStep = 0;
                 const progressInterval = setInterval(() => {
                     progressStep += 1;
-                    showProgress(progressStep, 15);
+                    showProgress(progressStep, 10);
                 }, 1000);
 
                 try {
@@ -508,12 +438,6 @@
 
                     const data = await response.json();
                     displayResults(data);
-                    
-                    // Show nutrition insights section if nutritional analysis was enabled
-                    if (preferences.extract_nutrition) {
-                        nutritionInsights.classList.remove('hidden');
-                        loadNutritionInsights(preferences.campus);
-                    }
 
                 } catch (error) {
                     clearInterval(progressInterval);
@@ -544,79 +468,6 @@
 
             analyzeBtn.addEventListener('click', debouncedAnalyze);
 
-            // Load nutrition insights
-            async function loadNutritionInsights(campus) {
-                try {
-                    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-                    const apiUrl = isLocal 
-                        ? `http://127.0.0.1:5001/api/nutrition-insights/${campus}`
-                        : `/api/nutrition-insights/${campus}`;
-                    
-                    const response = await fetch(apiUrl);
-                    if (response.ok) {
-                        const insights = await response.json();
-                        displayNutritionInsights(insights);
-                    }
-                } catch (error) {
-                    console.error('Error loading nutrition insights:', error);
-                }
-            }
-
-            // Display nutrition insights
-            function displayNutritionInsights(insights) {
-                if (insights.error) {
-                    insightsContent.innerHTML = `<p class="text-gray-500">${insights.error}</p>`;
-                    return;
-                }
-
-                const html = `
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div class="bg-gray-50 p-4 rounded-lg">
-                            <h4 class="font-semibold text-gray-800 mb-2">Summary</h4>
-                            <p class="text-sm text-gray-600">Analyzed ${insights.total_foods_analyzed} food items</p>
-                            <p class="text-sm text-gray-600">Avg. Calories: ${Math.round(insights.average_calories || 0)}</p>
-                            <p class="text-sm text-gray-600">Avg. Protein: ${Math.round(insights.average_protein || 0)}g</p>
-                        </div>
-                        <div class="bg-gray-50 p-4 rounded-lg">
-                            <h4 class="font-semibold text-gray-800 mb-2">Top Protein Foods</h4>
-                            ${insights.highest_protein_foods?.map(food => 
-                                `<p class="text-sm text-gray-600">${food.food_name}: ${food.protein}g protein</p>`
-                            ).join('') || '<p class="text-sm text-gray-500">No data available</p>'}
-                        </div>
-                    </div>
-                `;
-                insightsContent.innerHTML = html;
-            }
-
-            // Download CSV functionality
-            downloadCsvBtn.addEventListener('click', async () => {
-                try {
-                    const campus = campusSelect.value;
-                    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-                    const apiUrl = isLocal 
-                        ? `http://127.0.0.1:5001/api/download-nutrition/${campus}`
-                        : `/api/download-nutrition/${campus}`;
-                    
-                    const response = await fetch(apiUrl);
-                    if (response.ok) {
-                        const blob = await response.blob();
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `${campus}_nutrition_${new Date().toISOString().split('T')[0]}.csv`;
-                        document.body.appendChild(a);
-                        a.click();
-                        window.URL.revokeObjectURL(url);
-                        document.body.removeChild(a);
-                    } else {
-                        alert('No nutrition data available for download');
-                    }
-                } catch (error) {
-                    console.error('Error downloading CSV:', error);
-                    alert('Error downloading nutrition data');
-                }
-            }); // main commit
-
             function displayResults(data) {
                 resultsContainer.innerHTML = ''; // Clear previous results or loader
                 const meals = ['Breakfast', 'Lunch', 'Dinner'];
@@ -640,10 +491,6 @@
                         itemsHtml = items.map((item, index) => {
                             const [food, score, reason, url] = item;
                             const scoreColor = score >= 80 ? 'bg-green-100 text-green-800' : score >= 60 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
-                            
-                            // Parse nutritional information from reason if available
-                            const nutritionBadges = parseNutritionBadges(reason);
-                            
                             return `
                                 <div class="py-4 ${index < items.length - 1 ? 'border-b border-gray-200' : ''}">
                                     <div class="flex items-start justify-between">
@@ -652,7 +499,6 @@
                                             <p class="text-sm text-gray-500 mt-1">
                                                 <strong class="font-medium">Analysis:</strong> ${reason || 'A standard, balanced option.'}
                                             </p>
-                                            ${nutritionBadges ? `<div class="mt-2">${nutritionBadges}</div>` : ''}
                                         </div>
                                         <div class="ml-4 text-center">
                                             <span class="text-xs font-semibold uppercase text-gray-500">Score</span>
@@ -675,35 +521,6 @@
                     `;
                     resultsContainer.appendChild(mealEl);
                 });
-            }
-
-            // Parse nutrition badges from reasoning text
-            function parseNutritionBadges(reason) {
-                if (!reason) return '';
-                
-                const badges = [];
-                const reasonLower = reason.toLowerCase();
-                
-                if (reasonLower.includes('high protein')) {
-                    badges.push('<span class="nutrition-badge nutrition-high">High Protein</span>');
-                }
-                if (reasonLower.includes('moderate protein')) {
-                    badges.push('<span class="nutrition-badge nutrition-medium">Moderate Protein</span>');
-                }
-                if (reasonLower.includes('low protein')) {
-                    badges.push('<span class="nutrition-badge nutrition-low">Low Protein</span>');
-                }
-                if (reasonLower.includes('high fiber')) {
-                    badges.push('<span class="nutrition-badge nutrition-high">High Fiber</span>');
-                }
-                if (reasonLower.includes('low sodium')) {
-                    badges.push('<span class="nutrition-badge nutrition-high">Low Sodium</span>');
-                }
-                if (reasonLower.includes('high sodium')) {
-                    badges.push('<span class="nutrition-badge nutrition-low">High Sodium</span>');
-                }
-                
-                return badges.join('');
             }
 
             // Add keyboard shortcuts

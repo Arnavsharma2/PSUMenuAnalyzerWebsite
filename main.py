@@ -266,7 +266,7 @@ class MenuAnalyzer:
         Menu: {json.dumps(menu_for_prompt, indent=2)}
         """
         try:
-            response = self.session.post(self.gemini_url, headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=60)
+            response = self.session.post(self.gemini_url, headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=90)
             response.raise_for_status()
             data = response.json()
             text_response = data["candidates"][0]["content"]["parts"][0]["text"]

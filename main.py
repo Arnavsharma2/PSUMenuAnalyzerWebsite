@@ -10,15 +10,29 @@ from datetime import datetime, timedelta
 import os
 import time
 from urllib.parse import urljoin
+import math
 
 # --- Flask App Initialization ---
 app = Flask(__name__)
 CORS(app)
 
+def get_seconds_until_11pm():
+    """Calculate seconds until 11pm today, or 0 if it's already past 11pm"""
+    now = datetime.now()
+    today_11pm = now.replace(hour=23, minute=0, second=0, microsecond=0)
+    
+    if now >= today_11pm:
+        # If it's already past 11pm, return seconds until 11pm tomorrow
+        tomorrow_11pm = today_11pm + timedelta(days=1)
+        return int((tomorrow_11pm - now).total_seconds())
+    else:
+        # Return seconds until 11pm today
+        return int((today_11pm - now).total_seconds())
+
 # Configure caching
 cache_config = {
     'CACHE_TYPE': 'simple',  # Use simple in-memory cache
-    'CACHE_DEFAULT_TIMEOUT': 3600  # 1 hour default timeout
+    'CACHE_DEFAULT_TIMEOUT': get_seconds_until_11pm()  # Cache until 11pm
 }
 app.config.from_mapping(cache_config)
 cache = Cache(app)
@@ -52,7 +66,7 @@ class MenuAnalyzer:
         if self.prioritize_protein and self.debug:
             print("INFO: Analysis is set to prioritize protein content.")
 
-    @cache.memoize(timeout=1800)  # Cache for 30 minutes
+    @cache.memoize(timeout=get_seconds_until_11pm())  # Cache until 11pm
     def get_initial_form_data(self) -> Optional[Dict[str, Dict[str, str]]]:
         try:
             response = self.session.get(self.base_url, timeout=30)
@@ -153,7 +167,7 @@ class MenuAnalyzer:
         
         # If not in cache, run analysis and cache the result
         result = self._run_analysis_uncached()
-        cache.set(cache_key, result, timeout=3600)  # Cache for 1 hour
+        cache.set(cache_key, result, timeout=get_seconds_until_11pm())  # Cache until 11pm
         return result
 
     def _run_analysis_uncached(self) -> Dict[str, List[Tuple[str, int, str, str]]]:

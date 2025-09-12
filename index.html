@@ -100,6 +100,30 @@
             background-size: 1.5em 1.5em;
             padding-right: 2.5rem;
         }
+        /* Collapsible dropdown styles */
+        .meal-header {
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.2s ease;
+        }
+        .meal-header:hover {
+            background-color: #f8fafc;
+        }
+        .meal-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }
+        .meal-content.expanded {
+            max-height: 2000px;
+            transition: max-height 0.3s ease-in;
+        }
+        .chevron {
+            transition: transform 0.2s ease;
+        }
+        .chevron.rotated {
+            transform: rotate(180deg);
+        }
     </style>
 </head>
 <body class="antialiased text-gray-800 p-4 sm:p-6 md:p-8">
@@ -470,7 +494,22 @@
 
             function displayResults(data) {
                 resultsContainer.innerHTML = ''; // Clear previous results or loader
-                const meals = ['Breakfast', 'Lunch', 'Dinner'];
+                
+                // Filter meals based on current Pennsylvania time (Eastern Time)
+                const now = new Date();
+                const paTime = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}));
+                const currentHour = paTime.getHours();
+                
+                const allMeals = ['Breakfast', 'Lunch', 'Dinner'];
+                const meals = allMeals.filter(mealName => {
+                    if (mealName === 'Breakfast' && currentHour >= 12) {
+                        return false; // Hide breakfast after 12pm
+                    }
+                    if (mealName === 'Lunch' && currentHour >= 18) {
+                        return false; // Hide lunch after 6pm
+                    }
+                    return true; // Always show dinner
+                });
 
                 if (Object.values(data).every(meal => !meal || meal.length === 0)) {
                     resultsContainer.innerHTML = `
@@ -484,7 +523,7 @@
                 meals.forEach(mealName => {
                     const items = data[mealName];
                     const mealEl = document.createElement('div');
-                    mealEl.className = 'bg-white rounded-lg shadow-md p-6 fade-in';
+                    mealEl.className = 'bg-white rounded-lg shadow-md fade-in';
                     
                     let itemsHtml = '<p class="text-gray-500">No items found for this meal.</p>';
                     if (items && items.length > 0) {
@@ -516,8 +555,17 @@
                     }
 
                     mealEl.innerHTML = `
-                        <h3 class="text-2xl font-bold text-blue-700 mb-4 pb-2 border-b-2 border-blue-200">${mealName}</h3>
-                        <div class="space-y-2">${itemsHtml}</div>
+                        <div class="meal-header p-6 border-b border-gray-200" onclick="toggleMeal('${mealName.toLowerCase()}')">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-2xl font-bold text-blue-700">${mealName}</h3>
+                                <svg class="chevron w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="meal-content" id="${mealName.toLowerCase()}-content">
+                            <div class="p-6 space-y-2">${itemsHtml}</div>
+                        </div>
                     `;
                     resultsContainer.appendChild(mealEl);
                 });
@@ -530,6 +578,17 @@
                     debouncedAnalyze();
                 }
             });
+
+            // Global function for toggling meal sections
+            window.toggleMeal = function(mealName) {
+                const content = document.getElementById(`${mealName}-content`);
+                const chevron = document.querySelector(`[onclick="toggleMeal('${mealName}')"] .chevron`);
+                
+                if (content && chevron) {
+                    content.classList.toggle('expanded');
+                    chevron.classList.toggle('rotated');
+                }
+            };
 
             // Add service worker for offline functionality (optional)
             if ('serviceWorker' in navigator) {

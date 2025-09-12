@@ -7,16 +7,34 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --secondary: #f1f5f9;
+            --accent: #06b6d4;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --text-muted: #94a3b8;
+            --border: #e2e8f0;
+            --surface: #ffffff;
+            --surface-hover: #f8fafc;
+        }
+        
         body {
             font-family: 'Inter', sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
+            color: var(--text-primary);
         }
-        .main-container {
+        
+        .glass-container {
             background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
         }
         .toggle-switch {
             position: relative;
@@ -52,7 +70,7 @@
             border-radius: 50%;
         }
         input:checked + .slider {
-            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); /* Penn State blue gradient */
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
         }
         input:checked + .slider:before {
             transform: translateX(22px);
@@ -60,7 +78,7 @@
         /* Custom styles for loader and results */
         #loader {
             border: 4px solid #f3f3f3;
-            border-top: 4px solid #1e3a8a;
+            border-top: 4px solid var(--primary);
             border-radius: 50%;
             width: 40px;
             height: 40px;
@@ -83,7 +101,7 @@
         }
         .progress-fill {
             height: 100%;
-            background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%);
+            background: linear-gradient(90deg, var(--primary) 0%, var(--accent) 100%);
             border-radius: 2px;
             transition: width 0.3s ease;
         }
@@ -131,39 +149,130 @@
         .chevron.rotated {
             transform: rotate(180deg);
         }
-        /* Modern card styling */
-        .preference-card {
-            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-            border: 1px solid #e2e8f0;
+        
+        /* Modern UI Components */
+        .modern-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
             transition: all 0.3s ease;
         }
-        .preference-card:hover {
+        
+        .modern-card:hover {
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
             transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-            border-color: #3b82f6;
         }
-        .analyze-button {
-            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
-            box-shadow: 0 10px 25px rgba(30, 58, 138, 0.3);
+        
+        .preference-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .preference-card:hover {
+            background: var(--surface-hover);
+            border-color: var(--primary);
+            transform: translateY(-1px);
+        }
+        
+        .modern-button {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            padding: 12px 24px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.39);
+        }
+        
+        .modern-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px 0 rgba(99, 102, 241, 0.5);
+        }
+        
+        .meal-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
             transition: all 0.3s ease;
         }
-        .analyze-button:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 15px 35px rgba(30, 58, 138, 0.4);
-        }
-        .campus-select {
-            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-            border: 2px solid #e2e8f0;
+        
+        .meal-header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 20px;
+            cursor: pointer;
             transition: all 0.3s ease;
         }
-        .campus-select:focus {
-            border-color: #3b82f6;
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        
+        .meal-header:hover {
+            background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%);
+        }
+        
+        .food-item {
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+            transition: all 0.3s ease;
+        }
+        
+        .food-item:hover {
+            background: var(--surface-hover);
+        }
+        
+        .food-item:last-child {
+            border-bottom: none;
+        }
+        
+        .score-badge {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 16px;
+        }
+        
+        .score-excellent {
+            background: linear-gradient(135deg, var(--success) 0%, #059669 100%);
+            color: white;
+        }
+        
+        .score-good {
+            background: linear-gradient(135deg, var(--warning) 0%, #d97706 100%);
+            color: white;
+        }
+        
+        .score-fair {
+            background: linear-gradient(135deg, var(--danger) 0%, #dc2626 100%);
+            color: white;
+        }
+        
+        .modern-input {
+            background: var(--surface);
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            padding: 12px 16px;
+            transition: all 0.3s ease;
+            color: var(--text-primary);
+        }
+        
+        .modern-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
         }
     </style>
 </head>
-<body class="antialiased text-gray-800 p-4 sm:p-6 md:p-8">
-    <div class="max-w-5xl mx-auto main-container p-8">
+<body class="antialiased p-4 sm:p-6 md:p-8">
+    <div class="max-w-6xl mx-auto glass-container rounded-3xl p-8">
         <!-- Weekend Warning Banner -->
         <div class="bg-amber-50 border-l-4 border-amber-400 p-4 mb-6 rounded-r-lg">
             <div class="flex">
@@ -182,20 +291,15 @@
         </div>
 
         <header class="text-center mb-12">
-            <div class="flex items-center justify-center mb-4">
-                <div class="w-16 h-16 bg-gradient-to-br from-blue-600 to-blue-800 rounded-full flex items-center justify-center mr-4">
-                    <svg class="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"></path>
-                    </svg>
-                </div>
-                <div>
-                    <h1 class="text-4xl sm:text-5xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">
-                        Penn State Campus Dining Analyzer
-                    </h1>
-                    <div class="w-24 h-1 bg-gradient-to-r from-blue-600 to-blue-800 mx-auto mt-2 rounded-full"></div>
-                </div>
+            <div class="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl mb-6">
+                <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                </svg>
             </div>
-            <p class="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed">
+            <h1 class="text-4xl sm:text-5xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-4">
+                Penn State Campus Dining Analyzer
+            </h1>
+            <p class="text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed">
                 Get personalized meal recommendations powered by AI for any Penn State campus dining location.
             </p>
         </header>
@@ -237,18 +341,18 @@
         </div>
 
         <main>
-            <div class="bg-white rounded-2xl shadow-xl p-8 mb-8 border border-gray-100">
+            <div class="modern-card p-8 mb-8">
                 <div class="text-center mb-8">
-                    <h2 class="text-3xl font-bold text-gray-800 mb-2">Campus & Dietary Preferences</h2>
-                    <div class="w-16 h-1 bg-gradient-to-r from-blue-600 to-blue-800 mx-auto rounded-full"></div>
+                    <h2 class="text-3xl font-bold text-slate-800 mb-2">Campus & Dietary Preferences</h2>
+                    <div class="w-20 h-1 bg-gradient-to-r from-indigo-500 to-purple-500 mx-auto rounded-full"></div>
                 </div>
                 
                 <!-- Campus Selection -->
                 <div class="mb-8">
-                    <label for="campus-select" class="block text-lg font-semibold text-gray-800 mb-4">
+                    <label for="campus-select" class="block text-lg font-semibold text-slate-700 mb-4">
                         Select Your Campus Dining Location
                     </label>
-                    <select id="campus-select" class="campus-select w-full px-4 py-3 rounded-xl shadow-sm focus:outline-none text-gray-700">
+                    <select id="campus-select" class="modern-input w-full">
                         <option value="altoona-port-sky">Altoona - Port Sky Cafe</option>
                         <option value="beaver-brodhead">Beaver - Brodhead Bistro</option>
                         <option value="behrend-brunos">Behrend - Bruno's</option>
@@ -266,19 +370,19 @@
                         <option value="up-south-redifer">UP: South Food District @ Redifer</option>
                         <option value="up-west-waring">UP: West Food District @ Waring</option>
                     </select>
-                    <p class="mt-2 text-sm text-gray-600">Choose the dining location you want to analyze</p>
+                    <p class="mt-3 text-sm text-slate-500">Choose the dining location you want to analyze</p>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <!-- Vegetarian Toggle -->
-                    <div id="vegetarian-pref" class="preference-item preference-card flex items-center justify-between p-6 rounded-xl">
+                    <div id="vegetarian-pref" class="preference-item preference-card flex items-center justify-between p-6">
                         <div class="flex items-center">
-                            <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mr-4">
-                                <svg class="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd"></path>
+                            <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center mr-4">
+                                <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
                                 </svg>
                             </div>
-                            <span class="font-semibold text-gray-800">Vegetarian (includes eggs)</span>
+                            <span class="font-semibold text-slate-700">Vegetarian (includes eggs)</span>
                         </div>
                         <label class="toggle-switch">
                             <input type="checkbox" id="vegetarian">
@@ -286,14 +390,14 @@
                         </label>
                     </div>
                     <!-- Protein Priority Toggle -->
-                    <div class="preference-card flex items-center justify-between p-6 rounded-xl">
+                    <div class="preference-card flex items-center justify-between p-6">
                         <div class="flex items-center">
-                            <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
-                                <svg class="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                                    <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mr-4">
+                                <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                 </svg>
                             </div>
-                            <span class="font-semibold text-gray-800">Prioritize High Protein</span>
+                            <span class="font-semibold text-slate-700">Prioritize High Protein</span>
                         </div>
                         <label class="toggle-switch">
                             <input type="checkbox" id="prioritize-protein">
@@ -301,14 +405,14 @@
                         </label>
                     </div>
                     <!-- Exclude Beef Toggle -->
-                    <div id="beef-pref" class="preference-item preference-card flex items-center justify-between p-6 rounded-xl">
+                    <div id="beef-pref" class="preference-item preference-card flex items-center justify-between p-6">
                         <div class="flex items-center">
-                            <div class="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center mr-4">
-                                <svg class="w-5 h-5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                            <div class="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center mr-4">
+                                <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                                 </svg>
                             </div>
-                            <span class="font-semibold text-gray-800">Exclude Beef</span>
+                            <span class="font-semibold text-slate-700">Exclude Beef</span>
                         </div>
                         <label class="toggle-switch">
                             <input type="checkbox" id="exclude-beef">
@@ -316,14 +420,14 @@
                         </label>
                     </div>
                     <!-- Exclude Pork Toggle -->
-                    <div id="pork-pref" class="preference-item preference-card flex items-center justify-between p-6 rounded-xl">
+                    <div id="pork-pref" class="preference-item preference-card flex items-center justify-between p-6">
                         <div class="flex items-center">
-                            <div class="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center mr-4">
-                                <svg class="w-5 h-5 text-orange-600" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                            <div class="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center mr-4">
+                                <svg class="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                                 </svg>
                             </div>
-                            <span class="font-semibold text-gray-800">Exclude Pork</span>
+                            <span class="font-semibold text-slate-700">Exclude Pork</span>
                         </div>
                         <label class="toggle-switch">
                             <input type="checkbox" id="exclude-pork">
@@ -331,10 +435,10 @@
                         </label>
                     </div>
                 </div>
-                <div class="mt-8 text-center">
-                    <button id="analyze-btn" class="analyze-button text-white font-bold py-4 px-12 rounded-xl text-lg focus:outline-none focus:ring-4 focus:ring-blue-300">
+                <div class="mt-10 text-center">
+                    <button id="analyze-btn" class="modern-button text-lg px-12 py-4 focus:outline-none focus:ring-4 focus:ring-indigo-300">
                         <span class="flex items-center justify-center">
-                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
                             </svg>
                             Analyze Today's Menu
@@ -609,31 +713,32 @@
                 meals.forEach(mealName => {
                     const items = data[mealName];
                     const mealEl = document.createElement('div');
-                    mealEl.className = 'bg-white rounded-lg shadow-md fade-in';
+                    mealEl.className = 'meal-card fade-in';
                     
-                    let itemsHtml = '<p class="text-gray-500">No items found for this meal.</p>';
+                    let itemsHtml = '<div class="p-8 text-center"><p class="text-slate-500 text-lg">No items found for this meal.</p></div>';
                     if (items && items.length > 0) {
                         itemsHtml = items.map((item, index) => {
                             const [food, score, reason, url] = item;
-                            const scoreColor = score >= 80 ? 'bg-green-100 text-green-800' : score >= 60 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+                            const scoreClass = score >= 80 ? 'score-excellent' : score >= 60 ? 'score-good' : 'score-fair';
                             return `
-                                <div class="py-4 ${index < items.length - 1 ? 'border-b border-gray-200' : ''}">
+                                <div class="food-item">
                                     <div class="flex items-start justify-between">
                                         <div class="flex-1">
-                                            <h4 class="text-lg font-semibold text-gray-800">${food}</h4>
-                                            <p class="text-sm text-gray-500 mt-1">
-                                                <strong class="font-medium">Analysis:</strong> ${reason || 'A standard, balanced option.'}
+                                            <h4 class="text-xl font-bold text-slate-800 mb-2">${food}</h4>
+                                            <p class="text-slate-600 mb-3">
+                                                <span class="font-semibold text-slate-700">Analysis:</span> ${reason || 'A standard, balanced option.'}
                                             </p>
+                                            <a href="${url}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center text-indigo-600 hover:text-indigo-800 font-medium">
+                                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                                                </svg>
+                                                View Nutrition Info
+                                            </a>
                                         </div>
-                                        <div class="ml-4 text-center">
-                                            <span class="text-xs font-semibold uppercase text-gray-500">Score</span>
-                                            <div class="text-xl font-bold ${scoreColor} rounded-full w-12 h-12 flex items-center justify-center mt-1">${score}</div>
+                                        <div class="ml-6 text-center">
+                                            <div class="text-xs font-semibold uppercase text-slate-500 mb-2">Health Score</div>
+                                            <div class="score-badge ${scoreClass}">${score}</div>
                                         </div>
-                                    </div>
-                                    <div class="mt-2">
-                                        <a href="${url}" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-600 hover:text-blue-800 hover:underline">
-                                            View Nutrition Info &rarr;
-                                        </a>
                                     </div>
                                 </div>
                             `;
@@ -641,16 +746,16 @@
                     }
 
                     mealEl.innerHTML = `
-                        <div class="meal-header p-6 border-b border-gray-200" onclick="toggleMeal('${mealName.toLowerCase()}')">
+                        <div class="meal-header" onclick="toggleMeal('${mealName.toLowerCase()}')">
                             <div class="flex items-center justify-between">
-                                <h3 class="text-2xl font-bold text-blue-700">${mealName}</h3>
-                                <svg class="chevron w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <h3 class="text-2xl font-bold">${mealName}</h3>
+                                <svg class="chevron w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
                                 </svg>
                             </div>
                         </div>
                         <div class="meal-content" id="${mealName.toLowerCase()}-content">
-                            <div class="p-6 space-y-2">${itemsHtml}</div>
+                            ${itemsHtml}
                         </div>
                     `;
                     resultsContainer.appendChild(mealEl);

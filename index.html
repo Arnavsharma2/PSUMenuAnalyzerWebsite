@@ -502,8 +502,8 @@
                 
                 const allMeals = ['Breakfast', 'Lunch', 'Dinner'];
                 const meals = allMeals.filter(mealName => {
-                    if (mealName === 'Breakfast' && currentHour >= 12) {
-                        return false; // Hide breakfast after 12pm
+                    if (mealName === 'Breakfast' && currentHour >= 13) {
+                        return false; // Hide breakfast after 1pm
                     }
                     if (mealName === 'Lunch' && currentHour >= 18) {
                         return false; // Hide lunch after 6pm

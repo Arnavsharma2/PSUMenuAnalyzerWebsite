@@ -9,7 +9,14 @@
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #f0f4f8;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .main-container {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
         }
         .toggle-switch {
             position: relative;
@@ -45,7 +52,7 @@
             border-radius: 50%;
         }
         input:checked + .slider {
-            background-color: #3b82f6; /* blue-500 */
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); /* Penn State blue gradient */
         }
         input:checked + .slider:before {
             transform: translateX(22px);
@@ -53,7 +60,7 @@
         /* Custom styles for loader and results */
         #loader {
             border: 4px solid #f3f3f3;
-            border-top: 4px solid #3b82f6;
+            border-top: 4px solid #1e3a8a;
             border-radius: 50%;
             width: 40px;
             height: 40px;
@@ -76,7 +83,7 @@
         }
         .progress-fill {
             height: 100%;
-            background-color: #3b82f6;
+            background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%);
             border-radius: 2px;
             transition: width 0.3s ease;
         }
@@ -124,10 +131,39 @@
         .chevron.rotated {
             transform: rotate(180deg);
         }
+        /* Modern card styling */
+        .preference-card {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            border: 1px solid #e2e8f0;
+            transition: all 0.3s ease;
+        }
+        .preference-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            border-color: #3b82f6;
+        }
+        .analyze-button {
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            box-shadow: 0 10px 25px rgba(30, 58, 138, 0.3);
+            transition: all 0.3s ease;
+        }
+        .analyze-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 35px rgba(30, 58, 138, 0.4);
+        }
+        .campus-select {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border: 2px solid #e2e8f0;
+            transition: all 0.3s ease;
+        }
+        .campus-select:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
     </style>
 </head>
 <body class="antialiased text-gray-800 p-4 sm:p-6 md:p-8">
-    <div class="max-w-4xl mx-auto">
+    <div class="max-w-5xl mx-auto main-container p-8">
         <!-- Weekend Warning Banner -->
         <div class="bg-amber-50 border-l-4 border-amber-400 p-4 mb-6 rounded-r-lg">
             <div class="flex">
@@ -145,9 +181,23 @@
             </div>
         </div>
 
-        <header class="text-center mb-8">
-            <h1 class="text-3xl sm:text-4xl font-bold text-gray-900">Penn State Campus Dining Analyzer</h1>
-            <p class="mt-2 text-lg text-gray-600">Get personalized meal recommendations for any Penn State campus dining location.</p>
+        <header class="text-center mb-12">
+            <div class="flex items-center justify-center mb-4">
+                <div class="w-16 h-16 bg-gradient-to-br from-blue-600 to-blue-800 rounded-full flex items-center justify-center mr-4">
+                    <svg class="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"></path>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-4xl sm:text-5xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">
+                        Penn State Campus Dining Analyzer
+                    </h1>
+                    <div class="w-24 h-1 bg-gradient-to-r from-blue-600 to-blue-800 mx-auto mt-2 rounded-full"></div>
+                </div>
+            </div>
+            <p class="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed">
+                Get personalized meal recommendations powered by AI for any Penn State campus dining location.
+            </p>
         </header>
 
         <!-- Health Score Explanation -->
@@ -187,15 +237,18 @@
         </div>
 
         <main>
-            <div class="bg-white rounded-lg shadow-md p-6 mb-8">
-                <h2 class="text-2xl font-semibold mb-4 text-gray-800">Campus & Dietary Preferences</h2>
+            <div class="bg-white rounded-2xl shadow-xl p-8 mb-8 border border-gray-100">
+                <div class="text-center mb-8">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-2">Campus & Dietary Preferences</h2>
+                    <div class="w-16 h-1 bg-gradient-to-r from-blue-600 to-blue-800 mx-auto rounded-full"></div>
+                </div>
                 
                 <!-- Campus Selection -->
-                <div class="mb-6">
-                    <label for="campus-select" class="block text-sm font-medium text-gray-700 mb-2">
+                <div class="mb-8">
+                    <label for="campus-select" class="block text-lg font-semibold text-gray-800 mb-4">
                         Select Your Campus Dining Location
                     </label>
-                    <select id="campus-select" class="campus-select w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    <select id="campus-select" class="campus-select w-full px-4 py-3 rounded-xl shadow-sm focus:outline-none text-gray-700">
                         <option value="altoona-port-sky">Altoona - Port Sky Cafe</option>
                         <option value="beaver-brodhead">Beaver - Brodhead Bistro</option>
                         <option value="behrend-brunos">Behrend - Bruno's</option>
@@ -213,46 +266,79 @@
                         <option value="up-south-redifer">UP: South Food District @ Redifer</option>
                         <option value="up-west-waring">UP: West Food District @ Waring</option>
                     </select>
-                    <p class="mt-1 text-xs text-gray-500">Choose the dining location you want to analyze</p>
+                    <p class="mt-2 text-sm text-gray-600">Choose the dining location you want to analyze</p>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <!-- Vegetarian Toggle -->
-                    <div id="vegetarian-pref" class="preference-item flex items-center justify-between bg-gray-50 p-4 rounded-lg">
-                        <span class="font-medium text-gray-700">Vegetarian (includes eggs)</span>
+                    <div id="vegetarian-pref" class="preference-item preference-card flex items-center justify-between p-6 rounded-xl">
+                        <div class="flex items-center">
+                            <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center mr-4">
+                                <svg class="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd"></path>
+                                </svg>
+                            </div>
+                            <span class="font-semibold text-gray-800">Vegetarian (includes eggs)</span>
+                        </div>
                         <label class="toggle-switch">
                             <input type="checkbox" id="vegetarian">
                             <span class="slider"></span>
                         </label>
                     </div>
                     <!-- Protein Priority Toggle -->
-                    <div class="flex items-center justify-between bg-gray-50 p-4 rounded-lg">
-                        <span class="font-medium text-gray-700">Prioritize High Protein</span>
+                    <div class="preference-card flex items-center justify-between p-6 rounded-xl">
+                        <div class="flex items-center">
+                            <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-4">
+                                <svg class="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                            </div>
+                            <span class="font-semibold text-gray-800">Prioritize High Protein</span>
+                        </div>
                         <label class="toggle-switch">
                             <input type="checkbox" id="prioritize-protein">
                             <span class="slider"></span>
                         </label>
                     </div>
                     <!-- Exclude Beef Toggle -->
-                    <div id="beef-pref" class="preference-item flex items-center justify-between bg-gray-50 p-4 rounded-lg">
-                        <span class="font-medium text-gray-700">Exclude Beef</span>
+                    <div id="beef-pref" class="preference-item preference-card flex items-center justify-between p-6 rounded-xl">
+                        <div class="flex items-center">
+                            <div class="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center mr-4">
+                                <svg class="w-5 h-5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                                </svg>
+                            </div>
+                            <span class="font-semibold text-gray-800">Exclude Beef</span>
+                        </div>
                         <label class="toggle-switch">
                             <input type="checkbox" id="exclude-beef">
                             <span class="slider"></span>
                         </label>
                     </div>
                     <!-- Exclude Pork Toggle -->
-                    <div id="pork-pref" class="preference-item flex items-center justify-between bg-gray-50 p-4 rounded-lg">
-                        <span class="font-medium text-gray-700">Exclude Pork</span>
+                    <div id="pork-pref" class="preference-item preference-card flex items-center justify-between p-6 rounded-xl">
+                        <div class="flex items-center">
+                            <div class="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center mr-4">
+                                <svg class="w-5 h-5 text-orange-600" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                                </svg>
+                            </div>
+                            <span class="font-semibold text-gray-800">Exclude Pork</span>
+                        </div>
                         <label class="toggle-switch">
                             <input type="checkbox" id="exclude-pork">
                             <span class="slider"></span>
                         </label>
                     </div>
                 </div>
-                <div class="mt-6 text-center">
-                    <button id="analyze-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg shadow-md transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-300">
-                        Analyze Today's Menu
+                <div class="mt-8 text-center">
+                    <button id="analyze-btn" class="analyze-button text-white font-bold py-4 px-12 rounded-xl text-lg focus:outline-none focus:ring-4 focus:ring-blue-300">
+                        <span class="flex items-center justify-center">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                            </svg>
+                            Analyze Today's Menu
+                        </span>
                     </button>
                 </div>
             </div>

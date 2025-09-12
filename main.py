@@ -69,7 +69,7 @@ class MenuAnalyzer:
     @cache.memoize(timeout=get_seconds_until_11pm())  # Cache until 11pm
     def get_initial_form_data(self) -> Optional[Dict[str, Dict[str, str]]]:
         try:
-            response = self.session.get(self.base_url, timeout=30)
+            response = self.session.get(self.base_url, timeout=90)
             response.raise_for_status()
             soup = BeautifulSoup(response.content, 'html.parser')
             
@@ -215,7 +215,7 @@ class MenuAnalyzer:
             try:
                 form_data = {'selCampus': campus_value, 'selMeal': meal_value, 'selMenuDate': date_value}
                 if self.debug: print(f"Fetching menu for {meal_name} with data: {form_data}")
-                response = self.session.post(self.base_url, data=form_data, timeout=30)
+                response = self.session.post(self.base_url, data=form_data, timeout=90)
                 response.raise_for_status()
                 meal_soup = BeautifulSoup(response.content, 'html.parser')
                 items = self.extract_items_from_meal_page(meal_soup)

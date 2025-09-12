@@ -447,11 +447,18 @@
                         ? 'http://127.0.0.1:5001/api/analyze'  // Local development
                         : '/api/analyze';  // Railway deployment (relative URL)
                     
+                    // Create AbortController for 90-second timeout
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 seconds
+                    
                     const response = await fetch(apiUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(preferences)
+                        body: JSON.stringify(preferences),
+                        signal: controller.signal
                     });
+                    
+                    clearTimeout(timeoutId);
 
                     clearInterval(progressInterval);
 
@@ -465,6 +472,7 @@
 
                 } catch (error) {
                     clearInterval(progressInterval);
+                    clearTimeout(timeoutId);
                     console.error('Error fetching recommendations:', error);
                     
                     let errorMessage = "Could not connect to the backend server.";

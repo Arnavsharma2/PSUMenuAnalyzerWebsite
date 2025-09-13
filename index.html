@@ -507,11 +507,16 @@
                 const now = new Date();
                 const paTime = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}));
                 const currentHour = paTime.getHours();
+                const dayOfWeek = paTime.getDay(); // 0 = Sunday, 6 = Saturday
                 
                 const allMeals = ['Breakfast', 'Lunch', 'Dinner'];
                 const meals = allMeals.filter(mealName => {
+                    // Hide breakfast on weekends (Saturday = 6, Sunday = 0)
+                    if (mealName === 'Breakfast' && (dayOfWeek === 0 || dayOfWeek === 6)) {
+                        return false; // Hide breakfast on weekends
+                    }
                     if (mealName === 'Breakfast' && currentHour >= 13) {
-                        return false; // Hide breakfast after 1pm
+                        return false; // Hide breakfast after 1pm on weekdays
                     }
                     if (mealName === 'Lunch' && currentHour >= 18) {
                         return false; // Hide lunch after 6pm

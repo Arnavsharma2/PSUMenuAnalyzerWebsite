@@ -283,11 +283,21 @@ class MenuAnalyzer:
                 results[meal] = meal_results
             return results
         except Exception as e:
-            if self.debug: print(f"Gemini analysis failed: {e}")
+            if self.debug: 
+                # Sanitize error message for debug output
+                debug_error = str(e)
+                if self.gemini_api_key and self.gemini_api_key in debug_error:
+                    debug_error = debug_error.replace(self.gemini_api_key, "***API_KEY_HIDDEN***")
+                print(f"Gemini analysis failed: {debug_error}")
             
             # Parse the error to provide specific guidance
             error_message = str(e)
             user_guidance = ""
+            
+            # Remove API key from error message for security
+            sanitized_error = error_message
+            if self.gemini_api_key and self.gemini_api_key in error_message:
+                sanitized_error = error_message.replace(self.gemini_api_key, "***API_KEY_HIDDEN***")
             
             if "503" in error_message or "Service Unavailable" in error_message:
                 user_guidance = (
@@ -321,7 +331,7 @@ class MenuAnalyzer:
                     "Please try again later, or contact support if the issue persists."
                 )
             
-            raise Exception(f"Gemini API Error: {error_message}\n\nNext Steps: {user_guidance}")
+            raise Exception(f"Gemini API Error: {sanitized_error}\n\nNext Steps: {user_guidance}")
 
     def apply_hard_filters(self, food_items: List[Tuple[str, int, str, str]]) -> List[Tuple[str, int, str, str]]:
         if not (self.exclude_beef or self.exclude_pork or self.vegetarian): 

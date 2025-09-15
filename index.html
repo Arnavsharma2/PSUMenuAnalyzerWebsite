@@ -348,7 +348,7 @@
                     <div class="progress-bar mt-4">
                         <div class="progress-fill" style="width: 0%"></div>
                     </div>
-                    <p class="mt-2 text-sm text-gray-500">This may take 15-30 seconds...</p>
+                    <p class="mt-2 text-sm text-gray-500">This may take 30-60 seconds...</p>
                 ` : '';
                 
                 resultsContainer.innerHTML = `
@@ -438,18 +438,18 @@
                 const progressInterval = setInterval(() => {
                     progressStep += 1;
                     showProgress(progressStep, 20);
-                }, 1000);
+                }, 2000);
 
+                // Create AbortController for 90-second timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 seconds
+                
                 try {
                     // Auto-detect if running locally or on Railway
                     const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
                     const apiUrl = isLocal 
                         ? 'http://127.0.0.1:5001/api/analyze'  // Local development
                         : '/api/analyze';  // Railway deployment (relative URL)
-                    
-                    // Create AbortController for 90-second timeout
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 seconds
                     
                     const response = await fetch(apiUrl, {
                         method: 'POST',
@@ -477,8 +477,15 @@
                     
                     let errorMessage = "Could not connect to the backend server.";
                     let suggestion = "Please try again later.";
+                    let isGeminiError = false;
                     
-                    if (error.message.includes('429')) {
+                    // Check if this is a Gemini API error with detailed guidance
+                    if (error.message.includes('Gemini API Error:')) {
+                        isGeminiError = true;
+                        const parts = error.message.split('\n\nNext Steps:');
+                        errorMessage = parts[0].replace('Gemini API Error: ', '');
+                        suggestion = parts[1] || "Please try again later.";
+                    } else if (error.message.includes('429')) {
                         errorMessage = "Too many requests. Please wait a moment before trying again.";
                         suggestion = "Rate limit exceeded. Please wait 1 minute before retrying.";
                     } else if (error.message.includes('500')) {
@@ -489,11 +496,15 @@
                         suggestion = "Please refresh the page and try again.";
                     }
                     
+                    const errorClass = isGeminiError ? "bg-orange-100 border-orange-500 text-orange-800" : "bg-red-100 border-red-500 text-red-800";
+                    const errorTitle = isGeminiError ? "AI Analysis Error" : "Connection Error";
+                    
                     resultsContainer.innerHTML = `
-                        <div class="bg-red-100 border-l-4 border-red-500 text-red-800 p-4 rounded-lg shadow-sm fade-in" role="alert">
-                            <p class="font-bold">Connection Error</p>
-                            <p>${errorMessage}</p>
-                            <p class="mt-2 text-sm">${suggestion}</p>
+                        <div class="${errorClass} border-l-4 p-4 rounded-lg shadow-sm fade-in" role="alert">
+                            <p class="font-bold">${errorTitle}</p>
+                            <p class="mt-1">${errorMessage}</p>
+                            <p class="mt-2 text-sm font-medium">Next Steps:</p>
+                            <p class="mt-1 text-sm">${suggestion}</p>
                         </div>`;
                 }
             }, 500);

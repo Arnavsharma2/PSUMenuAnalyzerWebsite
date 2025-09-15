@@ -176,15 +176,13 @@ class MenuAnalyzer:
         
         form_options = self.get_initial_form_data()
         if not form_options:
-            print("Could not fetch form data. Using fallback.")
-            return self.get_fallback_data()
+            raise Exception("Could not fetch form data from the website.")
 
         campus_options = form_options.get('campus', {})
         campus_value, campus_name_found = self.find_campus_value(campus_options)
         
         if not campus_value:
-            print(f"Could not find campus value for {self.campus_key}. Available options: {list(campus_options.keys())}")
-            return self.get_fallback_data()
+            raise Exception(f"Could not find campus value for {self.campus_key}. Available options: {list(campus_options.keys())}")
         
         if self.debug:
             print(f"Found campus: {campus_name_found} with value: {campus_value}")
@@ -198,8 +196,7 @@ class MenuAnalyzer:
                 date_value = list(date_options.values())[0]
                 print(f"Warning: Today's menu ('{today_str_key}') not found. Using first available date: {first_available_date}")
             else:
-                print("No dates found. Using fallback.")
-                return self.get_fallback_data()
+                raise Exception("No dates found in the menu system.")
 
         daily_menu = {}
         meal_options = form_options.get('meal', {})
@@ -209,41 +206,38 @@ class MenuAnalyzer:
             meal_value = meal_options.get(meal_key)
             
             if not meal_value:
-                if self.debug: print(f"Could not find form value for '{meal_name}'. Skipping.")
-                continue
+                raise Exception(f"Could not find form value for '{meal_name}'.")
 
-            try:
-                form_data = {'selCampus': campus_value, 'selMeal': meal_value, 'selMenuDate': date_value}
-                if self.debug: print(f"Fetching menu for {meal_name} with data: {form_data}")
-                response = self.session.post(self.base_url, data=form_data, timeout=90)
-                response.raise_for_status()
-                meal_soup = BeautifulSoup(response.content, 'html.parser')
-                items = self.extract_items_from_meal_page(meal_soup)
-                if items:
-                    daily_menu[meal_name] = items
-                    if self.debug: print(f"Found {len(items)} items for {meal_name}.")
-                else:
-                    # Explicitly mark meals with no items
-                    daily_menu[meal_name] = {}
-                    if self.debug: print(f"No items found for {meal_name}.")
-                time.sleep(0.5)
-            except requests.RequestException as e:
-                if self.debug: print(f"Error fetching {meal_name} menu: {e}")
-                # Mark as no items if there's an error
-                daily_menu[meal_name] = {}
+            form_data = {'selCampus': campus_value, 'selMeal': meal_value, 'selMenuDate': date_value}
+            if self.debug: print(f"Fetching menu for {meal_name} with data: {form_data}")
+            response = self.session.post(self.base_url, data=form_data, timeout=90)
+            response.raise_for_status()
+            meal_soup = BeautifulSoup(response.content, 'html.parser')
+            items = self.extract_items_from_meal_page(meal_soup)
+            if items:
+                daily_menu[meal_name] = items
+                if self.debug: print(f"Found {len(items)} items for {meal_name}.")
+            else:
+                raise Exception(f"No items found for {meal_name}.")
+            time.sleep(0.5)
 
         if not daily_menu:
-            print("Failed to scrape any menu items from the website. Using fallback.")
-            return self.get_fallback_data()
+            raise Exception("Failed to scrape any menu items from the website.")
         
-        analyzed_results = self.analyze_menu_with_gemini(daily_menu) if self.gemini_api_key else self.analyze_menu_local(daily_menu)
+        analyzed_results = self.analyze_menu_with_gemini(daily_menu)
         
         final_results = {}
         for meal, items in analyzed_results.items():
             # First, apply the hard filters based on user preferences
             filtered_items = self.apply_hard_filters(items)
-            # Then, slice the list to get only the top 5 items
-            final_results[meal] = filtered_items[:5]
+            
+            # Count how many CYO items are in the top 5
+            top_5_items = filtered_items[:5]
+            cyo_count = sum(1 for item in top_5_items if "CYO" in item[0])
+            
+            # Add 1 additional item for each CYO item found
+            total_items = 5 + cyo_count
+            final_results[meal] = filtered_items[:total_items]
         
         return final_results
 
@@ -260,9 +254,14 @@ class MenuAnalyzer:
 
         # Ask for more items (e.g., 15) to allow for filtering down to 5.
         prompt = f"""
+        You are a professional nutritionist with expertise in meal planning, macronutrient analysis, and dietary recommendations. Your role is to analyze college dining hall menus and provide evidence-based nutritional guidance.
+
         Analyze the menu below. Your goal is to {priority_instruction}. My restrictions are: {restrictions_text}
-        For EACH meal, identify the top 15 options.
-        Return your response as a single, valid JSON object with keys "Breakfast", "Lunch", "Dinner". Each value should be a list of objects, each with "food_name", "score" (0-100), and "reasoning".
+        For EACH meal, identify the top 15 options based on nutritional value, protein content, and overall health benefits.
+        
+        IMPORTANT: For each "CYO" (Create Your Own) item in the top 5, return 1 additional item to provide concrete alternatives. For example: 1 CYO = 6 total items, 2 CYO = 7 total items, etc.
+        
+        Return your response as a single, valid JSON object with keys "Breakfast", "Lunch", "Dinner". Each value should be a list of objects, each with "food_name", "score" (0-100), and "reasoning" (provide detailed nutritional analysis).
         Menu: {json.dumps(menu_for_prompt, indent=2)}
         """
         try:
@@ -284,8 +283,45 @@ class MenuAnalyzer:
                 results[meal] = meal_results
             return results
         except Exception as e:
-            if self.debug: print(f"Gemini analysis failed: {e}. Falling back to local analysis.")
-            return self.analyze_menu_local(daily_menu)
+            if self.debug: print(f"Gemini analysis failed: {e}")
+            
+            # Parse the error to provide specific guidance
+            error_message = str(e)
+            user_guidance = ""
+            
+            if "503" in error_message or "Service Unavailable" in error_message:
+                user_guidance = (
+                    "The Gemini API is currently experiencing high load and is temporarily unavailable. "
+                    "This is a free API service that can become overloaded during peak usage times. "
+                    "Please try again in a few minutes."
+                )
+            elif "429" in error_message or "Too Many Requests" in error_message:
+                user_guidance = (
+                    "You've exceeded the rate limit for the Gemini API. "
+                    "Please wait a few minutes before making another request, or try again later."
+                )
+            elif "401" in error_message or "Unauthorized" in error_message:
+                user_guidance = (
+                    "The Gemini API key is invalid or has expired. "
+                    "Please contact the administrator to update the API configuration."
+                )
+            elif "400" in error_message or "Bad Request" in error_message:
+                user_guidance = (
+                    "The request to Gemini API was malformed. "
+                    "This might be due to an issue with the menu data format. Please try again."
+                )
+            elif "timeout" in error_message.lower():
+                user_guidance = (
+                    "The Gemini API request timed out. "
+                    "The API might be slow or overloaded. Please try again in a moment."
+                )
+            else:
+                user_guidance = (
+                    "An unexpected error occurred with the Gemini API. "
+                    "Please try again later, or contact support if the issue persists."
+                )
+            
+            raise Exception(f"Gemini API Error: {error_message}\n\nNext Steps: {user_guidance}")
 
     def apply_hard_filters(self, food_items: List[Tuple[str, int, str, str]]) -> List[Tuple[str, int, str, str]]:
         if not (self.exclude_beef or self.exclude_pork or self.vegetarian): 
@@ -301,54 +337,7 @@ class MenuAnalyzer:
                 filtered_list.append((food, score, reason, url))
         return filtered_list
 
-    def get_fallback_data(self) -> Dict[str, List[Tuple[str, int, str, str]]]:
-        fallback_menu = {
-            "Breakfast": {"Scrambled Eggs": "#", "Turkey Sausage": "#", "Oatmeal": "#"},
-            "Lunch": {"Grilled Chicken Salad": "#", "Turkey Club Sandwich": "#", "Quinoa Bowl": "#"},
-            "Dinner": {"Baked Salmon": "#", "Beef Stir-Fry": "#", "Grilled Chicken Breast": "#"}
-        }
-        analyzed = self.analyze_menu_local(fallback_menu)
-        filtered_fallback = {}
-        for meal, items in analyzed.items():
-            filtered_items = self.apply_hard_filters(items)
-            filtered_fallback[meal] = filtered_items[:5]
-        return filtered_fallback
 
-    def analyze_menu_local(self, daily_menu: Dict[str, Dict[str, str]]) -> Dict[str, List[Tuple[str, int, str, str]]]:
-        results = {}
-        for meal, items in daily_menu.items():
-            if not items:  # Handle empty meals
-                results[meal] = []
-            else:
-                analyzed_items = self.analyze_food_health_local_list(items)
-                analyzed_items.sort(key=lambda x: x[1], reverse=True)
-                results[meal] = analyzed_items
-        return results
-
-    def analyze_food_health_local_list(self, food_items: Dict[str, str]) -> List[Tuple[str, int, str, str]]:
-        health_scores = []
-        protein_keywords = {'excellent': ['chicken', 'salmon', 'tuna', 'turkey'], 'good': ['beef', 'eggs', 'tofu', 'beans'], 'moderate': ['cheese', 'yogurt']}
-        healthy_prep = {'excellent': ['grilled', 'baked', 'steamed'], 'good': ['sautéed'], 'poor': ['fried', 'creamy', 'battered']}
-
-        protein_weights = {'excellent': 40, 'good': 30, 'moderate': 15} if self.prioritize_protein else {'excellent': 30, 'good': 20, 'moderate': 10}
-        prep_weights = {'excellent': 10, 'good': 5, 'poor': -15} if self.prioritize_protein else {'excellent': 20, 'good': 10, 'poor': -25}
-
-        for item, url in food_items.items():
-            item_lower = item.lower()
-            score, reasoning = 50, []
-            for level, keywords in protein_keywords.items():
-                if any(kw in item_lower for kw in keywords):
-                    score += protein_weights[level]
-                    reasoning.append(f"High protein ({level})")
-                    break
-            for level, keywords in healthy_prep.items():
-                if any(kw in item_lower for kw in keywords):
-                    score += prep_weights[level]
-                    reasoning.append(f"Prep style ({level})")
-                    break
-            score = max(0, min(100, score))
-            health_scores.append((item, score, ", ".join(reasoning) or "Standard option", url))
-        return health_scores
 
 # --- Routes ---
 @app.route('/')
@@ -376,8 +365,8 @@ def analyze():
         exclude_pork = data.get('exclude_pork', False)
         prioritize_protein = data.get('prioritize_protein', False)
         
-        # Get API key from environment
-        api_key = os.getenv('GEMINI_API_KEY')
+        # Get API key from environment or use provided key
+        api_key = os.getenv('GEMINI_API_KEY', 'AIzaSyDBhmarorh_MF0vdqLqzg6yVTIt14lZ7eI')
 
         analyzer = MenuAnalyzer(
             campus_key=campus,
@@ -397,7 +386,7 @@ def analyze():
         print(f"[SERVER ERROR] {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({"error": "An internal server error occurred."}), 500
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5001))

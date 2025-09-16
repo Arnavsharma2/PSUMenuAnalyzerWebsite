@@ -12,4 +12,4 @@ EXPOSE 8080
 
 ENV PORT 8080
 
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:$PORT --timeout 90 main:app"]
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:$PORT main:app"]

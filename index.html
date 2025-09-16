@@ -100,30 +100,6 @@
             background-size: 1.5em 1.5em;
             padding-right: 2.5rem;
         }
-        /* Collapsible dropdown styles */
-        .meal-header {
-            cursor: pointer;
-            user-select: none;
-            transition: all 0.2s ease;
-        }
-        .meal-header:hover {
-            background-color: #f8fafc;
-        }
-        .meal-content {
-            max-height: 0;
-            overflow: hidden;
-            transition: max-height 0.3s ease-out;
-        }
-        .meal-content.expanded {
-            max-height: 2000px;
-            transition: max-height 0.3s ease-in;
-        }
-        .chevron {
-            transition: transform 0.2s ease;
-        }
-        .chevron.rotated {
-            transform: rotate(180deg);
-        }
     </style>
 </head>
 <body class="antialiased text-gray-800 p-4 sm:p-6 md:p-8">
@@ -161,11 +137,12 @@
                 <div class="ml-3">
                     <h3 class="text-sm font-medium text-blue-800">Understanding Health Scores</h3>
                     <div class="mt-2 text-sm text-blue-700">
-                        <p class="mb-2">Each menu item receives a health score from 0-100 based on:</p>
+                        <p class="mb-2">Each menu item receives a health score from 0-100 using AI analysis based on:</p>
                         <ul class="list-disc list-inside space-y-1">
                             <li><strong>Protein Content:</strong> High-protein items (chicken, salmon, eggs) score higher</li>
                             <li><strong>Cooking Method:</strong> Grilled, baked, and steamed items score better than fried options</li>
                             <li><strong>Nutritional Balance:</strong> Items with better macro and micronutrient profiles</li>
+                            <li><strong>AI Analysis:</strong> Powered by Google Gemini for comprehensive nutritional assessment</li>
                         </ul>
                         <div class="mt-3 flex items-center space-x-4 text-xs">
                             <div class="flex items-center">
@@ -222,6 +199,14 @@
                         <span class="font-medium text-gray-700">Vegetarian (includes eggs)</span>
                         <label class="toggle-switch">
                             <input type="checkbox" id="vegetarian">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <!-- Vegan Toggle -->
+                    <div id="vegan-pref" class="preference-item flex items-center justify-between bg-gray-50 p-4 rounded-lg">
+                        <span class="font-medium text-gray-700">Vegan (no animal products)</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="vegan">
                             <span class="slider"></span>
                         </label>
                     </div>
@@ -331,6 +316,7 @@
             const resultsContainer = document.getElementById('results-container');
             const campusSelect = document.getElementById('campus-select');
             const vegetarianToggle = document.getElementById('vegetarian');
+            const veganToggle = document.getElementById('vegan');
             const beefPref = document.getElementById('beef-pref');
             const porkPref = document.getElementById('pork-pref');
 
@@ -343,12 +329,20 @@
                 };
             };
 
-            const showLoadingState = (message = "Analyzing menu...", showProgress = false) => {
+            const showLoadingState = (message = "Analyzing menu...", showProgress = false, isRetrying = false) => {
                 const progressHtml = showProgress ? `
                     <div class="progress-bar mt-4">
                         <div class="progress-fill" style="width: 0%"></div>
                     </div>
-                    <p class="mt-2 text-sm text-gray-500">This may take 30-60 seconds...</p>
+                    <p class="mt-2 text-sm text-gray-500">This may take 10-15 seconds...</p>
+                ` : '';
+                
+                const retryMessage = isRetrying ? `
+                    <div class="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                        <p class="text-sm text-yellow-800">
+                            <strong>Hold on!</strong> The AI service is temporarily busy. We're retrying automatically...
+                        </p>
+                    </div>
                 ` : '';
                 
                 resultsContainer.innerHTML = `
@@ -356,6 +350,7 @@
                         <div id="loader"></div>
                         <p class="mt-4 text-gray-600 font-medium">${message}</p>
                         ${progressHtml}
+                        ${retryMessage}
                     </div>`;
             };
 
@@ -398,6 +393,7 @@
                 return {
                     campus: campusSelect.value,
                     vegetarian: document.getElementById('vegetarian').checked,
+                    vegan: document.getElementById('vegan').checked,
                     exclude_beef: document.getElementById('exclude-beef').checked,
                     exclude_pork: document.getElementById('exclude-pork').checked,
                     prioritize_protein: document.getElementById('prioritize-protein').checked
@@ -407,15 +403,33 @@
             // Load saved preferences
             loadPreferences();
 
-            // Logic to disable beef/pork toggles if vegetarian is selected
+            // Logic to disable beef/pork toggles if vegetarian or vegan is selected
             function updateToggleStates() {
                 const isVegetarian = vegetarianToggle.checked;
+                const isVegan = veganToggle.checked;
                 
-                // Disable beef/pork if vegetarian is selected
-                beefPref.classList.toggle('disabled', isVegetarian);
-                porkPref.classList.toggle('disabled', isVegetarian);
+                // If vegan is selected, disable vegetarian
+                if (isVegan) {
+                    vegetarianToggle.checked = false;
+                    vegetarianToggle.disabled = true;
+                } else {
+                    vegetarianToggle.disabled = false;
+                }
                 
+                // If vegetarian is selected, disable vegan
                 if (isVegetarian) {
+                    veganToggle.checked = false;
+                    veganToggle.disabled = true;
+                } else {
+                    veganToggle.disabled = false;
+                }
+                
+                // Disable beef/pork if either vegetarian or vegan is selected
+                const shouldDisableMeat = isVegetarian || isVegan;
+                beefPref.classList.toggle('disabled', shouldDisableMeat);
+                porkPref.classList.toggle('disabled', shouldDisableMeat);
+                
+                if (shouldDisableMeat) {
                     document.getElementById('exclude-beef').checked = false;
                     document.getElementById('exclude-pork').checked = false;
                 }
@@ -425,6 +439,7 @@
             }
 
             vegetarianToggle.addEventListener('change', updateToggleStates);
+            veganToggle.addEventListener('change', updateToggleStates);
             campusSelect.addEventListener('change', () => savePreferences(getPreferences()));
             
             // Debounced analysis function
@@ -437,13 +452,15 @@
                 let progressStep = 0;
                 const progressInterval = setInterval(() => {
                     progressStep += 1;
-                    showProgress(progressStep, 20);
-                }, 2000);
+                    showProgress(progressStep, 10);
+                }, 1000);
 
-                // Create AbortController for 90-second timeout
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 seconds
-                
+                // Set up retry detection - if it takes longer than 8 seconds, show retry message
+                let retryTimeout;
+                const retryDetection = setTimeout(() => {
+                    showLoadingState(`Analyzing menu for ${campusSelect.options[campusSelect.selectedIndex].text}...`, true, true);
+                }, 8000);
+
                 try {
                     // Auto-detect if running locally or on Railway
                     const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -454,13 +471,11 @@
                     const response = await fetch(apiUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(preferences),
-                        signal: controller.signal
+                        body: JSON.stringify(preferences)
                     });
-                    
-                    clearTimeout(timeoutId);
 
                     clearInterval(progressInterval);
+                    clearTimeout(retryDetection);
 
                     if (!response.ok) {
                         const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response from server.' }));
@@ -472,20 +487,13 @@
 
                 } catch (error) {
                     clearInterval(progressInterval);
-                    clearTimeout(timeoutId);
+                    clearTimeout(retryDetection);
                     console.error('Error fetching recommendations:', error);
                     
                     let errorMessage = "Could not connect to the backend server.";
                     let suggestion = "Please try again later.";
-                    let isGeminiError = false;
                     
-                    // Check if this is a Gemini API error with detailed guidance
-                    if (error.message.includes('Gemini API Error:')) {
-                        isGeminiError = true;
-                        const parts = error.message.split('\n\nNext Steps:');
-                        errorMessage = parts[0].replace('Gemini API Error: ', '');
-                        suggestion = parts[1] || "Please try again later.";
-                    } else if (error.message.includes('429')) {
+                    if (error.message.includes('429')) {
                         errorMessage = "Too many requests. Please wait a moment before trying again.";
                         suggestion = "Rate limit exceeded. Please wait 1 minute before retrying.";
                     } else if (error.message.includes('500')) {
@@ -494,17 +502,25 @@
                     } else if (error.message.includes('400')) {
                         errorMessage = "Invalid request data.";
                         suggestion = "Please refresh the page and try again.";
+                    } else if (error.message.includes('Gemini API') || error.message.includes('503') || error.message.includes('Service Unavailable')) {
+                        errorMessage = "AI Analysis Service Unavailable";
+                        suggestion = "The Google Gemini AI service is currently experiencing issues. This is not a problem with our application - please try again in a few minutes.";
+                    } else if (error.message.includes('Could not fetch form data') || 
+                               error.message.includes('Could not find campus value') || 
+                               error.message.includes('No dates found') ||
+                               error.message.includes('Failed to scrape any menu items')) {
+                        errorMessage = "Menu Data Unavailable";
+                        suggestion = error.message;
                     }
                     
-                    const errorClass = isGeminiError ? "bg-orange-100 border-orange-500 text-orange-800" : "bg-red-100 border-red-500 text-red-800";
-                    const errorTitle = isGeminiError ? "AI Analysis Error" : "Connection Error";
-                    
                     resultsContainer.innerHTML = `
-                        <div class="${errorClass} border-l-4 p-4 rounded-lg shadow-sm fade-in" role="alert">
-                            <p class="font-bold">${errorTitle}</p>
-                            <p class="mt-1">${errorMessage}</p>
-                            <p class="mt-2 text-sm font-medium">Next Steps:</p>
-                            <p class="mt-1 text-sm">${suggestion}</p>
+                        <div class="bg-red-100 border-l-4 border-red-500 text-red-800 p-4 rounded-lg shadow-sm fade-in" role="alert">
+                            <p class="font-bold">${errorMessage}</p>
+                            <p class="mt-2 text-sm">${suggestion}</p>
+                            ${error.message.includes('Gemini API') || error.message.includes('503') || error.message.includes('Service Unavailable') ? 
+                                '<div class="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-md"><p class="text-xs text-yellow-800"><strong>Note:</strong> This is a temporary issue with Google\'s Gemini AI service, not our application. The service should be restored shortly.</p></div>' : 
+                                ''
+                            }
                         </div>`;
                 }
             }, 500);
@@ -513,27 +529,7 @@
 
             function displayResults(data) {
                 resultsContainer.innerHTML = ''; // Clear previous results or loader
-                
-                // Filter meals based on current Pennsylvania time (Eastern Time)
-                const now = new Date();
-                const paTime = new Date(now.toLocaleString("en-US", {timeZone: "America/New_York"}));
-                const currentHour = paTime.getHours();
-                const dayOfWeek = paTime.getDay(); // 0 = Sunday, 6 = Saturday
-                
-                const allMeals = ['Breakfast', 'Lunch', 'Dinner'];
-                const meals = allMeals.filter(mealName => {
-                    // Hide breakfast on weekends (Saturday = 6, Sunday = 0)
-                    if (mealName === 'Breakfast' && (dayOfWeek === 0 || dayOfWeek === 6)) {
-                        return false; // Hide breakfast on weekends
-                    }
-                    if (mealName === 'Breakfast' && currentHour >= 13) {
-                        return false; // Hide breakfast after 1pm on weekdays
-                    }
-                    if (mealName === 'Lunch' && currentHour >= 18) {
-                        return false; // Hide lunch after 6pm
-                    }
-                    return true; // Always show dinner
-                });
+                const meals = ['Breakfast', 'Lunch', 'Dinner'];
 
                 if (Object.values(data).every(meal => !meal || meal.length === 0)) {
                     resultsContainer.innerHTML = `
@@ -547,7 +543,7 @@
                 meals.forEach(mealName => {
                     const items = data[mealName];
                     const mealEl = document.createElement('div');
-                    mealEl.className = 'bg-white rounded-lg shadow-md fade-in';
+                    mealEl.className = 'bg-white rounded-lg shadow-md p-6 fade-in';
                     
                     let itemsHtml = '<p class="text-gray-500">No items found for this meal.</p>';
                     if (items && items.length > 0) {
@@ -579,17 +575,8 @@
                     }
 
                     mealEl.innerHTML = `
-                        <div class="meal-header p-6 border-b border-gray-200" onclick="toggleMeal('${mealName.toLowerCase()}')">
-                            <div class="flex items-center justify-between">
-                                <h3 class="text-2xl font-bold text-blue-700">${mealName}</h3>
-                                <svg class="chevron rotated w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                                </svg>
-                            </div>
-                        </div>
-                        <div class="meal-content expanded" id="${mealName.toLowerCase()}-content">
-                            <div class="p-6 space-y-2">${itemsHtml}</div>
-                        </div>
+                        <h3 class="text-2xl font-bold text-blue-700 mb-4 pb-2 border-b-2 border-blue-200">${mealName}</h3>
+                        <div class="space-y-2">${itemsHtml}</div>
                     `;
                     resultsContainer.appendChild(mealEl);
                 });
@@ -602,17 +589,6 @@
                     debouncedAnalyze();
                 }
             });
-
-            // Global function for toggling meal sections
-            window.toggleMeal = function(mealName) {
-                const content = document.getElementById(`${mealName}-content`);
-                const chevron = document.querySelector(`[onclick="toggleMeal('${mealName}')"] .chevron`);
-                
-                if (content && chevron) {
-                    content.classList.toggle('expanded');
-                    chevron.classList.toggle('rotated');
-                }
-            };
 
             // Add service worker for offline functionality (optional)
             if ('serviceWorker' in navigator) {

@@ -1,46 +1,29 @@
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-from flask_caching import Cache
 import requests
 from bs4 import BeautifulSoup
 import json
 import re
 from typing import List, Dict, Tuple, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
 import time
+import hashlib
+import pickle
 from urllib.parse import urljoin
-import math
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # --- Flask App Initialization ---
 app = Flask(__name__)
 CORS(app)
 
-def get_seconds_until_11pm():
-    """Calculate seconds until 11pm today, or 0 if it's already past 11pm"""
-    now = datetime.now()
-    today_11pm = now.replace(hour=23, minute=0, second=0, microsecond=0)
-    
-    if now >= today_11pm:
-        # If it's already past 11pm, return seconds until 11pm tomorrow
-        tomorrow_11pm = today_11pm + timedelta(days=1)
-        return int((tomorrow_11pm - now).total_seconds())
-    else:
-        # Return seconds until 11pm today
-        return int((today_11pm - now).total_seconds())
-
-# Configure caching
-cache_config = {
-    'CACHE_TYPE': 'simple',  # Use simple in-memory cache
-    'CACHE_DEFAULT_TIMEOUT': get_seconds_until_11pm()  # Cache until 11pm
-}
-app.config.from_mapping(cache_config)
-cache = Cache(app)
-
 # --- Menu Analyzer Class ---
 class MenuAnalyzer:
     def __init__(self, campus_key: str, gemini_api_key: str = None, exclude_beef=False, exclude_pork=False,
-                 vegetarian=False, prioritize_protein=False, debug=False):
+                 vegetarian=False, vegan=False, prioritize_protein=False, debug=False):
         self.base_url = "https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm"
         self.campus_key = campus_key
         self.session = requests.Session()
@@ -51,6 +34,7 @@ class MenuAnalyzer:
         self.exclude_beef = exclude_beef
         self.exclude_pork = exclude_pork
         self.vegetarian = vegetarian
+        self.vegan = vegan
         self.prioritize_protein = prioritize_protein
         
         # Use the passed parameter or fall back to environment variable
@@ -65,11 +49,69 @@ class MenuAnalyzer:
         
         if self.prioritize_protein and self.debug:
             print("INFO: Analysis is set to prioritize protein content.")
+        
+        # Cache directory setup
+        self.cache_dir = "cache"
+        if not os.path.exists(self.cache_dir):
+            os.makedirs(self.cache_dir)
 
-    @cache.memoize(timeout=get_seconds_until_11pm())  # Cache until 11pm
+    def get_cache_key(self, date_str: str) -> str:
+        """Generate a cache key based on campus, date, and preferences"""
+        preferences = {
+            'campus': self.campus_key,
+            'exclude_beef': self.exclude_beef,
+            'exclude_pork': self.exclude_pork,
+            'vegetarian': self.vegetarian,
+            'vegan': self.vegan,
+            'prioritize_protein': self.prioritize_protein,
+            'date': date_str
+        }
+        key_string = json.dumps(preferences, sort_keys=True)
+        return hashlib.md5(key_string.encode()).hexdigest()
+
+    def get_cached_result(self, date_str: str) -> Optional[Dict[str, List[Tuple[str, int, str, str]]]]:
+        """Check if we have cached results for this campus/date/preferences combination"""
+        cache_key = self.get_cache_key(date_str)
+        cache_file = os.path.join(self.cache_dir, f"{cache_key}.pkl")
+        
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, 'rb') as f:
+                    cached_data = pickle.load(f)
+                
+                # Check if cache is from today
+                if cached_data.get('date') == date_str:
+                    if self.debug:
+                        print(f"Using cached results for {self.campus_key} on {date_str}")
+                    return cached_data.get('results')
+            except Exception as e:
+                if self.debug:
+                    print(f"Error reading cache file: {e}")
+        
+        return None
+
+    def save_cached_result(self, date_str: str, results: Dict[str, List[Tuple[str, int, str, str]]]):
+        """Save results to cache"""
+        cache_key = self.get_cache_key(date_str)
+        cache_file = os.path.join(self.cache_dir, f"{cache_key}.pkl")
+        
+        try:
+            cache_data = {
+                'date': date_str,
+                'results': results,
+                'timestamp': datetime.now().isoformat()
+            }
+            with open(cache_file, 'wb') as f:
+                pickle.dump(cache_data, f)
+            if self.debug:
+                print(f"Cached results for {self.campus_key} on {date_str}")
+        except Exception as e:
+            if self.debug:
+                print(f"Error saving cache: {e}")
+
     def get_initial_form_data(self) -> Optional[Dict[str, Dict[str, str]]]:
         try:
-            response = self.session.get(self.base_url, timeout=90)
+            response = self.session.get(self.base_url, timeout=30)
             response.raise_for_status()
             soup = BeautifulSoup(response.content, 'html.parser')
             
@@ -155,28 +197,20 @@ class MenuAnalyzer:
         return None, ""
 
     def run_analysis(self) -> Dict[str, List[Tuple[str, int, str, str]]]:
-        # Create cache key based on parameters
-        cache_key = f"menu_analysis_{self.campus_key}_{self.exclude_beef}_{self.exclude_pork}_{self.vegetarian}_{self.prioritize_protein}_{datetime.now().strftime('%Y-%m-%d')}"
+        # Get current date for caching
+        today_str_key = datetime.now().strftime('%A, %B %d').lower()
         
-        # Try to get from cache first
-        cached_result = cache.get(cache_key)
+        # Check cache first
+        cached_result = self.get_cached_result(today_str_key)
         if cached_result:
-            if self.debug:
-                print("Returning cached menu analysis results")
             return cached_result
         
-        # If not in cache, run analysis and cache the result
-        result = self._run_analysis_uncached()
-        cache.set(cache_key, result, timeout=get_seconds_until_11pm())  # Cache until 11pm
-        return result
-
-    def _run_analysis_uncached(self) -> Dict[str, List[Tuple[str, int, str, str]]]:
         if self.debug: 
             print(f"Fetching initial form options for campus: {self.campus_key}")
         
         form_options = self.get_initial_form_data()
         if not form_options:
-            raise Exception("Could not fetch form data from the website.")
+            raise Exception("Could not fetch form data from Penn State website. Please try again later.")
 
         campus_options = form_options.get('campus', {})
         campus_value, campus_name_found = self.find_campus_value(campus_options)
@@ -188,7 +222,6 @@ class MenuAnalyzer:
             print(f"Found campus: {campus_name_found} with value: {campus_value}")
 
         date_options = form_options.get('date', {})
-        today_str_key = datetime.now().strftime('%A, %B %d').lower()
         date_value = date_options.get(today_str_key)
         if not date_value:
             if date_options:
@@ -196,7 +229,7 @@ class MenuAnalyzer:
                 date_value = list(date_options.values())[0]
                 print(f"Warning: Today's menu ('{today_str_key}') not found. Using first available date: {first_available_date}")
             else:
-                raise Exception("No dates found in the menu system.")
+                raise Exception("No dates found. Please try again later.")
 
         daily_menu = {}
         meal_options = form_options.get('meal', {})
@@ -206,23 +239,34 @@ class MenuAnalyzer:
             meal_value = meal_options.get(meal_key)
             
             if not meal_value:
-                raise Exception(f"Could not find form value for '{meal_name}'.")
+                if self.debug: print(f"Could not find form value for '{meal_name}'. Skipping.")
+                continue
 
-            form_data = {'selCampus': campus_value, 'selMeal': meal_value, 'selMenuDate': date_value}
-            if self.debug: print(f"Fetching menu for {meal_name} with data: {form_data}")
-            response = self.session.post(self.base_url, data=form_data, timeout=90)
-            response.raise_for_status()
-            meal_soup = BeautifulSoup(response.content, 'html.parser')
-            items = self.extract_items_from_meal_page(meal_soup)
-            if items:
-                daily_menu[meal_name] = items
-                if self.debug: print(f"Found {len(items)} items for {meal_name}.")
-            else:
-                raise Exception(f"No items found for {meal_name}.")
-            time.sleep(0.5)
+            try:
+                form_data = {'selCampus': campus_value, 'selMeal': meal_value, 'selMenuDate': date_value}
+                if self.debug: print(f"Fetching menu for {meal_name} with data: {form_data}")
+                response = self.session.post(self.base_url, data=form_data, timeout=30)
+                response.raise_for_status()
+                meal_soup = BeautifulSoup(response.content, 'html.parser')
+                items = self.extract_items_from_meal_page(meal_soup)
+                if items:
+                    daily_menu[meal_name] = items
+                    if self.debug: print(f"Found {len(items)} items for {meal_name}.")
+                else:
+                    # Explicitly mark meals with no items
+                    daily_menu[meal_name] = {}
+                    if self.debug: print(f"No items found for {meal_name}.")
+                time.sleep(0.5)
+            except requests.RequestException as e:
+                if self.debug: print(f"Error fetching {meal_name} menu: {e}")
+                # Mark as no items if there's an error
+                daily_menu[meal_name] = {}
 
         if not daily_menu:
-            raise Exception("Failed to scrape any menu items from the website.")
+            raise Exception("Failed to scrape any menu items from the website. Please try again later.")
+        
+        if not self.gemini_api_key:
+            raise Exception("Gemini API key is required but not provided. Please check your configuration.")
         
         analyzed_results = self.analyze_menu_with_gemini(daily_menu)
         
@@ -230,14 +274,11 @@ class MenuAnalyzer:
         for meal, items in analyzed_results.items():
             # First, apply the hard filters based on user preferences
             filtered_items = self.apply_hard_filters(items)
-            
-            # Count how many CYO items are in the top 5
-            top_5_items = filtered_items[:5]
-            cyo_count = sum(1 for item in top_5_items if "CYO" in item[0])
-            
-            # Add 1 additional item for each CYO item found
-            total_items = 5 + cyo_count
-            final_results[meal] = filtered_items[:total_items]
+            # Since we're now asking for top 5 directly, we don't need to slice further
+            final_results[meal] = filtered_items
+        
+        # Save to cache
+        self.save_cached_result(today_str_key, final_results)
         
         return final_results
 
@@ -246,95 +287,81 @@ class MenuAnalyzer:
         if self.exclude_beef: exclusions.append("No beef.")
         if self.exclude_pork: exclusions.append("No pork.")
         if self.vegetarian: exclusions.append("Only vegetarian items (includes eggs).")
+        if self.vegan: exclusions.append("Only vegan items (no animal products including eggs and dairy).")
         restrictions_text = " ".join(exclusions) if exclusions else "None."
 
         priority_instruction = ("prioritize PROTEIN content" if self.prioritize_protein else "prioritize a BALANCE of high protein and healthy preparation")
         
         menu_for_prompt = {meal: list(items.keys()) for meal, items in daily_menu.items()}
 
-        # Ask for more items (e.g., 15) to allow for filtering down to 5.
+        # Ask for top 5 options per meal, with special handling for CYO items
         prompt = f"""
-        You are a professional nutritionist with expertise in meal planning, macronutrient analysis, and dietary recommendations. Your role is to analyze college dining hall menus and provide evidence-based nutritional guidance.
-
         Analyze the menu below. Your goal is to {priority_instruction}. My restrictions are: {restrictions_text}
-        For EACH meal, identify the top 15 options based on nutritional value, protein content, and overall health benefits.
+        For EACH meal, identify the top 5 options.
         
-        IMPORTANT: For each "CYO" (Create Your Own) item in the top 5, return 1 additional item to provide concrete alternatives. For example: 1 CYO = 6 total items, 2 CYO = 7 total items, etc.
+        SPECIAL INSTRUCTION: For any CYO (Create Your Own) items in the top 5, also include a second entry showing the same CYO item with specific high-protein customizations. For example, if "CYO Burger" is in the top 5, also include "CYO Burger (High Protein)" with specific recommendations.
         
-        Return your response as a single, valid JSON object with keys "Breakfast", "Lunch", "Dinner". Each value should be a list of objects, each with "food_name", "score" (0-100), and "reasoning" (provide detailed nutritional analysis).
+        IMPORTANT: If you include CYO items with their high-protein versions, make sure to include enough additional non-CYO items so that the total count is at least 5 regular items plus any CYO high-protein versions. This ensures users get a good variety of options.
+        
+        Return your response as a single, valid JSON object with keys "Breakfast", "Lunch", "Dinner". Each value should be a list of objects, each with "food_name", "score" (0-100), and "reasoning".
         Menu: {json.dumps(menu_for_prompt, indent=2)}
         """
-        try:
-            response = self.session.post(self.gemini_url, headers={"Content-Type": "application/json"}, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=90)
-            response.raise_for_status()
-            data = response.json()
-            text_response = data["candidates"][0]["content"]["parts"][0]["text"]
-            json_str = re.search(r'\{.*\}', text_response, re.DOTALL).group(0)
-            parsed_json = json.loads(json_str)
+        
+        # Retry mechanism with exponential backoff
+        max_retries = 5  # Increased retries for better reliability
+        base_delay = 2   # Increased base delay
+        retry_attempted = False
+        
+        for attempt in range(max_retries):
+            try:
+                if self.debug: print(f"Gemini API attempt {attempt + 1}/{max_retries}")
+                
+                response = self.session.post(
+                    self.gemini_url, 
+                    headers={"Content-Type": "application/json"}, 
+                    json={"contents": [{"parts": [{"text": prompt}]}]}, 
+                    timeout=60
+                )
+                response.raise_for_status()
+                data = response.json()
+                text_response = data["candidates"][0]["content"]["parts"][0]["text"]
+                json_str = re.search(r'\{.*\}', text_response, re.DOTALL).group(0)
+                parsed_json = json.loads(json_str)
 
-            results = {}
-            for meal, analyzed_items in parsed_json.items():
-                meal_results = []
-                for item_info in analyzed_items:
-                    food_name = item_info.get("food_name")
-                    url = daily_menu.get(meal, {}).get(food_name, '#')
-                    meal_results.append((food_name, item_info.get("score"), item_info.get("reasoning"), url))
-                meal_results.sort(key=lambda x: x[1], reverse=True)
-                results[meal] = meal_results
-            return results
-        except Exception as e:
-            if self.debug: 
-                # Sanitize error message for debug output
-                debug_error = str(e)
-                if self.gemini_api_key and self.gemini_api_key in debug_error:
-                    debug_error = debug_error.replace(self.gemini_api_key, "***API_KEY_HIDDEN***")
-                print(f"Gemini analysis failed: {debug_error}")
-            
-            # Parse the error to provide specific guidance
-            error_message = str(e)
-            user_guidance = ""
-            
-            # Remove API key from error message for security
-            sanitized_error = error_message
-            if self.gemini_api_key and self.gemini_api_key in error_message:
-                sanitized_error = error_message.replace(self.gemini_api_key, "***API_KEY_HIDDEN***")
-            
-            if "503" in error_message or "Service Unavailable" in error_message:
-                user_guidance = (
-                    "The Gemini API is currently experiencing high load and is temporarily unavailable. "
-                    "This is a free API service that can become overloaded during peak usage times. "
-                    "Please try again in a few minutes."
-                )
-            elif "429" in error_message or "Too Many Requests" in error_message:
-                user_guidance = (
-                    "You've exceeded the rate limit for the Gemini API. "
-                    "Please wait a few minutes before making another request, or try again later."
-                )
-            elif "401" in error_message or "Unauthorized" in error_message:
-                user_guidance = (
-                    "The Gemini API key is invalid or has expired. "
-                    "Please contact the administrator to update the API configuration."
-                )
-            elif "400" in error_message or "Bad Request" in error_message:
-                user_guidance = (
-                    "The request to Gemini API was malformed. "
-                    "This might be due to an issue with the menu data format. Please try again."
-                )
-            elif "timeout" in error_message.lower():
-                user_guidance = (
-                    "The Gemini API request timed out. "
-                    "The API might be slow or overloaded. Please try again in a moment."
-                )
-            else:
-                user_guidance = (
-                    "An unexpected error occurred with the Gemini API. "
-                    "Please try again later, or contact support if the issue persists."
-                )
-            
-            raise Exception(f"Gemini API Error: {sanitized_error}\n\nNext Steps: {user_guidance}")
+                results = {}
+                for meal, analyzed_items in parsed_json.items():
+                    meal_results = []
+                    for item_info in analyzed_items:
+                        food_name = item_info.get("food_name")
+                        url = daily_menu.get(meal, {}).get(food_name, '#')
+                        meal_results.append((food_name, item_info.get("score"), item_info.get("reasoning"), url))
+                    meal_results.sort(key=lambda x: x[1], reverse=True)
+                    results[meal] = meal_results
+                return results
+                
+            except Exception as e:
+                if self.debug: print(f"Gemini analysis attempt {attempt + 1} failed: {e}")
+                
+                # If it's the last attempt, raise the exception
+                if attempt == max_retries - 1:
+                    raise Exception(f"Gemini API analysis failed after {max_retries} attempts: {str(e)}")
+                
+                # Check for retryable errors
+                error_str = str(e).lower()
+                if any(keyword in error_str for keyword in ["503", "service unavailable", "overloaded", "rate limit", "quota exceeded"]):
+                    retry_attempted = True
+                    delay = base_delay * (2 ** attempt)  # Exponential backoff
+                    if self.debug: print(f"Retryable error detected: {e}. Waiting {delay} seconds before retry...")
+                    time.sleep(delay)
+                else:
+                    # For other errors, don't retry
+                    raise Exception(f"Gemini API analysis failed: {str(e)}")
+        
+        # This should never be reached, but just in case
+        raise Exception("Unexpected error in retry loop")
 
     def apply_hard_filters(self, food_items: List[Tuple[str, int, str, str]]) -> List[Tuple[str, int, str, str]]:
-        if not (self.exclude_beef or self.exclude_pork or self.vegetarian): 
+        if not (self.exclude_beef or self.exclude_pork or self.vegetarian or self.vegan): 
             return food_items
         filtered_list = []
         for food, score, reason, url in food_items:
@@ -343,10 +370,10 @@ class MenuAnalyzer:
             if self.exclude_beef and "beef" in item_lower: excluded = True
             if self.exclude_pork and any(p in item_lower for p in ["pork", "bacon", "sausage", "ham"]): excluded = True
             if self.vegetarian and any(m in item_lower for m in ["beef", "pork", "chicken", "turkey", "fish", "salmon", "tuna", "bacon", "sausage", "ham"]): excluded = True
+            if self.vegan and any(m in item_lower for m in ["beef", "pork", "chicken", "turkey", "fish", "salmon", "tuna", "bacon", "sausage", "ham", "egg", "eggs", "dairy", "milk", "cheese", "butter", "yogurt"]): excluded = True
             if not excluded:
                 filtered_list.append((food, score, reason, url))
         return filtered_list
-
 
 
 # --- Routes ---
@@ -371,12 +398,17 @@ def analyze():
         # Simple validation
         campus = data.get('campus', 'altoona-port-sky')
         vegetarian = data.get('vegetarian', False)
+        vegan = data.get('vegan', False)
         exclude_beef = data.get('exclude_beef', False)
         exclude_pork = data.get('exclude_pork', False)
         prioritize_protein = data.get('prioritize_protein', False)
         
-        # Get API key from environment or use provided key
-        api_key = os.getenv('GEMINI_API_KEY', 'AIzaSyDBhmarorh_MF0vdqLqzg6yVTIt14lZ7eI')
+        # Validate that vegan and vegetarian aren't both selected
+        if vegan and vegetarian:
+            return jsonify({"error": "Cannot be both vegan and vegetarian"}), 400
+        
+        # Get API key from environment
+        api_key = os.getenv('GEMINI_API_KEY')
 
         analyzer = MenuAnalyzer(
             campus_key=campus,
@@ -384,6 +416,7 @@ def analyze():
             exclude_beef=exclude_beef,
             exclude_pork=exclude_pork,
             vegetarian=vegetarian,
+            vegan=vegan,
             prioritize_protein=prioritize_protein,
             debug=True
         )
@@ -396,7 +429,13 @@ def analyze():
         print(f"[SERVER ERROR] {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        
+        # Check if it's a Gemini API error and pass it through
+        if "Gemini API" in str(e) or "503" in str(e) or "Service Unavailable" in str(e):
+            return jsonify({"error": str(e)}), 500
+        else:
+            return jsonify({"error": "An internal server error occurred."}), 500
+
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5001))

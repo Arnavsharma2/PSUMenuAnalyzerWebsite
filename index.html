@@ -319,43 +319,6 @@
             const veganToggle = document.getElementById('vegan');
             const beefPref = document.getElementById('beef-pref');
             const porkPref = document.getElementById('pork-pref');
-            
-            // Cooldown management
-            let isOnCooldown = false;
-            let cooldownEndTime = 0;
-            const COOLDOWN_DURATION = 60000; // 1 minute in milliseconds
-
-            // Cooldown functions
-            function startCooldown() {
-                isOnCooldown = true;
-                cooldownEndTime = Date.now() + COOLDOWN_DURATION;
-                updateButtonState();
-                updateCooldownDisplay();
-            }
-
-            function updateCooldownDisplay() {
-                if (!isOnCooldown) return;
-                
-                const remaining = Math.ceil((cooldownEndTime - Date.now()) / 1000);
-                if (remaining > 0) {
-                    analyzeBtn.textContent = `Analyze (${remaining}s cooldown)`;
-                    setTimeout(updateCooldownDisplay, 1000);
-                } else {
-                    isOnCooldown = false;
-                    updateButtonState();
-                }
-            }
-
-            function updateButtonState() {
-                if (isOnCooldown) {
-                    analyzeBtn.disabled = true;
-                    analyzeBtn.classList.add('opacity-50', 'cursor-not-allowed');
-                } else {
-                    analyzeBtn.disabled = false;
-                    analyzeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                    analyzeBtn.textContent = 'Analyze Menu';
-                }
-            }
 
             // Utility functions
             const debounce = (func, delay) => {
@@ -481,13 +444,6 @@
             
             // Debounced analysis function
             const debouncedAnalyze = debounce(async () => {
-                // Check cooldown
-                if (isOnCooldown) {
-                    const remaining = Math.ceil((cooldownEndTime - Date.now()) / 1000);
-                    showLoadingState(`Please wait ${remaining} seconds before analyzing again.`, false);
-                    return;
-                }
-
                 const preferences = getPreferences();
                 
                 showLoadingState(`Analyzing menu for ${campusSelect.options[campusSelect.selectedIndex].text}...`, true);
@@ -528,9 +484,6 @@
 
                     const data = await response.json();
                     displayResults(data);
-                    
-                    // Start cooldown after successful analysis
-                    startCooldown();
 
                 } catch (error) {
                     clearInterval(progressInterval);
@@ -540,11 +493,9 @@
                     let errorMessage = "Could not connect to the backend server.";
                     let suggestion = "Please try again later.";
                     
-                    if (error.message.includes('429') || error.message.includes('Please wait')) {
-                        errorMessage = "Analysis cooldown active. Please wait before trying again.";
+                    if (error.message.includes('429')) {
+                        errorMessage = "Too many requests. Please wait a moment before trying again.";
                         suggestion = "Rate limit exceeded. Please wait 1 minute before retrying.";
-                        // Start cooldown on frontend too
-                        startCooldown();
                     } else if (error.message.includes('500')) {
                         errorMessage = "Server error occurred.";
                         suggestion = "Please try again in a few moments.";

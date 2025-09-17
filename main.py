@@ -20,6 +20,10 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
+# Cooldown tracking (in-memory for simplicity)
+user_cooldowns = {}
+COOLDOWN_DURATION = 60  # 1 minute in seconds
+
 # --- Menu Analyzer Class ---
 class MenuAnalyzer:
     def __init__(self, campus_key: str, gemini_api_key: str = None, exclude_beef=False, exclude_pork=False,
@@ -396,6 +400,22 @@ def analyze():
     try:
         data = request.json
         print(f"Received request with data: {data}")
+        
+        # Check cooldown (using IP address as identifier)
+        client_ip = request.remote_addr
+        current_time = time.time()
+        
+        if client_ip in user_cooldowns:
+            time_since_last = current_time - user_cooldowns[client_ip]
+            if time_since_last < COOLDOWN_DURATION:
+                remaining_time = int(COOLDOWN_DURATION - time_since_last)
+                return jsonify({
+                    "error": f"Please wait {remaining_time} seconds before analyzing again.",
+                    "cooldown_remaining": remaining_time
+                }), 429  # Too Many Requests
+        
+        # Update cooldown timestamp
+        user_cooldowns[client_ip] = current_time
         
         # Simple validation
         campus = data.get('campus', 'altoona-port-sky')

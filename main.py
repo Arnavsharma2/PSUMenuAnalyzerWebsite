@@ -301,7 +301,9 @@ class MenuAnalyzer:
         
         SPECIAL INSTRUCTION: For any CYO (Create Your Own) items in the top 5, also include a second entry showing the same CYO item with specific high-protein customizations. For example, if "CYO Burger" is in the top 5, also include "CYO Burger (High Protein)" with specific recommendations.
         
-        IMPORTANT: If you include CYO items with their high-protein versions, make sure to include enough additional non-CYO items so that the total count is at least 5 regular items plus any CYO high-protein versions. This ensures users get a good variety of options.
+        IMPORTANT: 
+        - Include a MAXIMUM of 2 CYO items per meal category (Breakfast, Lunch, Dinner)
+        - If you include CYO items with their high-protein versions, make sure to include enough additional non-CYO items so that the total count is at least 5 regular items plus any CYO high-protein versions. This ensures users get a good variety of options.
         
         Return your response as a single, valid JSON object with keys "Breakfast", "Lunch", "Dinner". Each value should be a list of objects, each with "food_name", "score" (0-100), and "reasoning".
         Menu: {json.dumps(menu_for_prompt, indent=2)}

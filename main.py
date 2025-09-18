@@ -197,8 +197,8 @@ class MenuAnalyzer:
         return None, ""
 
     def run_analysis(self) -> Dict[str, List[Tuple[str, int, str, str]]]:
-        # Get current date for caching
-        today_str_key = datetime.now().strftime('%A, %B %d').lower()
+        # Get current date for caching (with version to force refresh)
+        today_str_key = datetime.now().strftime('%A, %B %d').lower() + "_v2"
         
         # Check cache first
         cached_result = self.get_cached_result(today_str_key)
@@ -299,11 +299,19 @@ class MenuAnalyzer:
         Analyze the menu below. Your goal is to {priority_instruction}. My restrictions are: {restrictions_text}
         For EACH meal, identify the top 5 options.
         
-        SPECIAL INSTRUCTION: For any CYO (Create Your Own) items in the top 5, also include a second entry showing the same CYO item with specific high-protein customizations. For example, if "CYO Burger" is in the top 5, also include "CYO Burger (High Protein)" with specific recommendations.
+        CRITICAL RULES:
+        - ONLY select items that appear EXACTLY as listed in the menu below
+        - DO NOT create any variations, modifications, or "High Protein" versions
+        - DO NOT add "(High Protein)" or any other suffixes to item names
+        - For CYO items, explain in the reasoning how to customize them for high protein
+        - Select exactly 5 items per meal category (Breakfast, Lunch, Dinner)
         
-        IMPORTANT: 
-        - Include a MAXIMUM of 2 CYO items per meal category (Breakfast, Lunch, Dinner)
-        - If you include CYO items with their high-protein versions, make sure to include enough additional non-CYO items so that the total count is at least 5 regular items plus any CYO high-protein versions. This ensures users get a good variety of options.
+        Example of CORRECT format:
+        "food_name": "CYO Omelet"
+        "reasoning": "Customize with high-protein ingredients like extra eggs, cheese, and meat"
+        
+        Example of INCORRECT format:
+        "food_name": "CYO Omelet (High Protein)"  // DO NOT DO THIS
         
         Return your response as a single, valid JSON object with keys "Breakfast", "Lunch", "Dinner". Each value should be a list of objects, each with "food_name", "score" (0-100), and "reasoning".
         Menu: {json.dumps(menu_for_prompt, indent=2)}
@@ -335,6 +343,11 @@ class MenuAnalyzer:
                     meal_results = []
                     for item_info in analyzed_items:
                         food_name = item_info.get("food_name")
+                        
+                        # Skip items with "(High Protein)" suffix as they don't exist in the menu
+                        if "(High Protein)" in food_name:
+                            continue
+                            
                         url = daily_menu.get(meal, {}).get(food_name, '#')
                         meal_results.append((food_name, item_info.get("score"), item_info.get("reasoning"), url))
                     meal_results.sort(key=lambda x: x[1], reverse=True)

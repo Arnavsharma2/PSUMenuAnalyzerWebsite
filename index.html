@@ -69,19 +69,6 @@
             opacity: 0.5;
             pointer-events: none;
         }
-        .progress-bar {
-            width: 100%;
-            height: 4px;
-            background-color: #e5e7eb;
-            border-radius: 2px;
-            overflow: hidden;
-        }
-        .progress-fill {
-            height: 100%;
-            background-color: #3b82f6;
-            border-radius: 2px;
-            transition: width 0.3s ease;
-        }
         .fade-in {
             animation: fadeIn 0.5s ease-in;
         }
@@ -331,14 +318,7 @@
                 };
             };
 
-            const showLoadingState = (message = "Analyzing menu...", showProgress = false, isRetrying = false) => {
-                const progressHtml = showProgress ? `
-                    <div class="progress-bar mt-4">
-                        <div class="progress-fill" style="width: 0%"></div>
-                    </div>
-                    <p class="mt-2 text-sm text-gray-500">This may take 10-15 seconds...</p>
-                ` : '';
-                
+            const showLoadingState = (message = "Analyzing menu...", isRetrying = false) => {
                 const retryMessage = isRetrying ? `
                     <div class="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
                         <p class="text-sm text-yellow-800">
@@ -351,18 +331,10 @@
                     <div class="flex flex-col items-center justify-center p-6 bg-white rounded-lg shadow-md fade-in">
                         <div id="loader"></div>
                         <p class="mt-4 text-gray-600 font-medium">${message}</p>
-                        ${progressHtml}
                         ${retryMessage}
                     </div>`;
             };
 
-            const showProgress = (step, total) => {
-                const progressFill = document.querySelector('.progress-fill');
-                if (progressFill) {
-                    const progress = (step / total) * 100;
-                    progressFill.style.width = `${progress}%`;
-                }
-            };
 
             const savePreferences = (preferences) => {
                 try {
@@ -448,19 +420,12 @@
             const debouncedAnalyze = debounce(async () => {
                 const preferences = getPreferences();
                 
-                showLoadingState(`Analyzing menu for ${campusSelect.options[campusSelect.selectedIndex].text}...`, true);
-                
-                // Simulate progress updates
-                let progressStep = 0;
-                const progressInterval = setInterval(() => {
-                    progressStep += 1;
-                    showProgress(progressStep, 10);
-                }, 1000);
+                showLoadingState(`Analyzing menu for ${campusSelect.options[campusSelect.selectedIndex].text}...`);
 
                 // Set up retry detection - if it takes longer than 8 seconds, show retry message
                 let retryTimeout;
                 const retryDetection = setTimeout(() => {
-                    showLoadingState(`Analyzing menu for ${campusSelect.options[campusSelect.selectedIndex].text}...`, true, true);
+                    showLoadingState(`Analyzing menu for ${campusSelect.options[campusSelect.selectedIndex].text}...`, true);
                 }, 8000);
 
                 try {
@@ -476,7 +441,6 @@
                         body: JSON.stringify(preferences)
                     });
 
-                    clearInterval(progressInterval);
                     clearTimeout(retryDetection);
 
                     if (!response.ok) {
@@ -488,7 +452,6 @@
                     displayResults(data);
 
                 } catch (error) {
-                    clearInterval(progressInterval);
                     clearTimeout(retryDetection);
                     console.error('Error fetching recommendations:', error);
                     

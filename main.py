@@ -12,6 +12,9 @@ import hashlib
 import pickle
 from urllib.parse import urljoin
 from dotenv import load_dotenv
+import asyncio
+import aiohttp
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Load environment variables from .env file
 load_dotenv()
@@ -158,6 +161,28 @@ class MenuAnalyzer:
                 items[text] = full_url
         return items
 
+    def fetch_single_meal(self, meal_name: str, meal_value: str, campus_value: str, date_value: str) -> Tuple[str, Dict[str, str]]:
+        """Fetch a single meal's menu data. Returns (meal_name, items_dict) or (meal_name, {}) on error."""
+        try:
+            form_data = {'selCampus': campus_value, 'selMeal': meal_value, 'selMenuDate': date_value}
+            if self.debug: print(f"Fetching menu for {meal_name} with data: {form_data}")
+            
+            response = self.session.post(self.base_url, data=form_data, timeout=30)
+            response.raise_for_status()
+            meal_soup = BeautifulSoup(response.content, 'html.parser')
+            items = self.extract_items_from_meal_page(meal_soup)
+            
+            if items:
+                if self.debug: print(f"Found {len(items)} items for {meal_name}.")
+                return meal_name, items
+            else:
+                if self.debug: print(f"No items found for {meal_name}.")
+                return meal_name, {}
+                
+        except requests.RequestException as e:
+            if self.debug: print(f"Error fetching {meal_name} menu: {e}")
+            return meal_name, {}
+
     def find_campus_value(self, campus_options: Dict[str, str]) -> Tuple[Optional[str], str]:
         """Find the correct campus value based on the campus key"""
         campus_key_lower = self.campus_key.lower()
@@ -234,33 +259,39 @@ class MenuAnalyzer:
         daily_menu = {}
         meal_options = form_options.get('meal', {})
         
+        # Prepare meal data for concurrent execution
+        meal_tasks = []
         for meal_name in ["Breakfast", "Lunch", "Dinner"]:
             meal_key = meal_name.lower()
             meal_value = meal_options.get(meal_key)
             
             if not meal_value:
                 if self.debug: print(f"Could not find form value for '{meal_name}'. Skipping.")
-                continue
-
-            try:
-                form_data = {'selCampus': campus_value, 'selMeal': meal_value, 'selMenuDate': date_value}
-                if self.debug: print(f"Fetching menu for {meal_name} with data: {form_data}")
-                response = self.session.post(self.base_url, data=form_data, timeout=30)
-                response.raise_for_status()
-                meal_soup = BeautifulSoup(response.content, 'html.parser')
-                items = self.extract_items_from_meal_page(meal_soup)
-                if items:
-                    daily_menu[meal_name] = items
-                    if self.debug: print(f"Found {len(items)} items for {meal_name}.")
-                else:
-                    # Explicitly mark meals with no items
-                    daily_menu[meal_name] = {}
-                    if self.debug: print(f"No items found for {meal_name}.")
-                time.sleep(0.5)
-            except requests.RequestException as e:
-                if self.debug: print(f"Error fetching {meal_name} menu: {e}")
-                # Mark as no items if there's an error
                 daily_menu[meal_name] = {}
+                continue
+            
+            meal_tasks.append((meal_name, meal_value))
+        
+        # Execute meal fetching concurrently
+        if meal_tasks:
+            if self.debug: print(f"Fetching {len(meal_tasks)} meals concurrently...")
+            
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                # Submit all tasks
+                future_to_meal = {
+                    executor.submit(self.fetch_single_meal, meal_name, meal_value, campus_value, date_value): meal_name
+                    for meal_name, meal_value in meal_tasks
+                }
+                
+                # Collect results as they complete
+                for future in as_completed(future_to_meal):
+                    meal_name = future_to_meal[future]
+                    try:
+                        result_meal_name, items = future.result()
+                        daily_menu[result_meal_name] = items
+                    except Exception as e:
+                        if self.debug: print(f"Unexpected error fetching {meal_name}: {e}")
+                        daily_menu[meal_name] = {}
 
         if not daily_menu:
             raise Exception("Failed to scrape any menu items from the website. Please try again later.")

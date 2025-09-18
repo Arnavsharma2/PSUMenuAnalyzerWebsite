@@ -599,7 +599,42 @@
                 });
             }
         });
+
+        // Cache clear functionality
+        function clearCache() {
+            const password = prompt('Enter admin password to clear cache:');
+            if (!password) return;
+            
+            fetch('/api/clear-cache', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ password: password })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                } else {
+                    alert('Success: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error clearing cache: ' + error.message);
+            });
+        }
     </script>
+
+    <!-- Cache Clear Button -->
+    <div class="fixed bottom-4 right-4">
+        <button onclick="clearCache()" 
+                class="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-2 rounded-lg shadow-lg transition-colors duration-200 opacity-50 hover:opacity-100"
+                title="Clear Cache (Admin Only)">
+            🗑️ Clear Cache
+        </button>
+    </div>
 </body>
 </html>
 

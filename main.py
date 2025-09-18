@@ -391,6 +391,28 @@ def health_check():
         'version': '1.0.0'
     })
 
+@app.route('/api/clear-cache', methods=['POST'])
+def clear_cache():
+    try:
+        data = request.json
+        password = data.get('password', '')
+        
+        if password != 'admin2264':
+            return jsonify({"error": "Invalid password"}), 401
+        
+        # Clear cache directory
+        import shutil
+        if os.path.exists("cache"):
+            shutil.rmtree("cache")
+            os.makedirs("cache")
+            return jsonify({"message": "Cache cleared successfully"})
+        else:
+            return jsonify({"message": "No cache to clear"})
+            
+    except Exception as e:
+        print(f"[CACHE CLEAR ERROR] {e}")
+        return jsonify({"error": "Failed to clear cache"}), 500
+
 @app.route('/api/analyze', methods=['POST'])
 def analyze():
     try:

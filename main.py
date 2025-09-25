@@ -44,7 +44,7 @@ class MenuAnalyzer:
         self.gemini_api_key = gemini_api_key or os.getenv('GEMINI_API_KEY')
         if self.gemini_api_key:
             self.gemini_url = (
-                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
                 f"?key={self.gemini_api_key}"
             )
         elif self.debug:

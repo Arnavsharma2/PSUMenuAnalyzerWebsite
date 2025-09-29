@@ -91,7 +91,7 @@ class MenuAnalyzer:
                 if self.debug:
                     print(f"Error reading cache file: {e}")
         
-        return None
+        return None #test
 
     def save_cached_result(self, date_str: str, results: Dict[str, List[Tuple[str, int, str, str]]]):
         """Save results to cache"""

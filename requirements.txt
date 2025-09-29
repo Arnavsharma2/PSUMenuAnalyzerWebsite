@@ -1,7 +1,2 @@
-Flask
-Flask-Cors
 requests
 beautifulsoup4
-gunicorn
-python-dotenv
-aiohttp

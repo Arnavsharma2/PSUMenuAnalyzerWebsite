@@ -15,6 +15,9 @@ from dotenv import load_dotenv
 import asyncio
 import aiohttp
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+import atexit
 
 # Load environment variables from .env file
 load_dotenv()
@@ -22,6 +25,36 @@ load_dotenv()
 # --- Flask App Initialization ---
 app = Flask(__name__)
 CORS(app)
+
+# --- Cache Scheduler Setup ---
+def clear_cache_daily():
+    """Clear the cache directory at 12pm daily"""
+    try:
+        import shutil
+        if os.path.exists("cache"):
+            shutil.rmtree("cache")
+            os.makedirs("cache")
+            print(f"[SCHEDULED CACHE CLEAR] Cache cleared at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        else:
+            print(f"[SCHEDULED CACHE CLEAR] No cache directory found at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    except Exception as e:
+        print(f"[SCHEDULED CACHE CLEAR ERROR] {e}")
+
+# Initialize scheduler
+scheduler = BackgroundScheduler()
+scheduler.add_job(
+    func=clear_cache_daily,
+    trigger=CronTrigger(hour=12, minute=0),  # 12:00 PM daily
+    id='daily_cache_clear',
+    name='Clear cache daily at 12pm',
+    replace_existing=True
+)
+
+# Start the scheduler
+scheduler.start()
+
+# Shut down the scheduler when the app exits
+atexit.register(lambda: scheduler.shutdown())
 
 # --- Menu Analyzer Class ---
 class MenuAnalyzer:
@@ -429,10 +462,20 @@ def index():
 
 @app.route('/health')
 def health_check():
+    # Check if scheduler is running
+    scheduler_status = "running" if scheduler.running else "stopped"
+    next_cache_clear = None
+    if scheduler.running:
+        job = scheduler.get_job('daily_cache_clear')
+        if job:
+            next_cache_clear = job.next_run_time.isoformat() if job.next_run_time else None
+    
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
-        'version': '1.0.0'
+        'version': '1.0.0',
+        'scheduler_status': scheduler_status,
+        'next_cache_clear': next_cache_clear
     })
 
 @app.route('/api/clear-cache', methods=['POST'])
@@ -507,5 +550,7 @@ def analyze():
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5001))
+    print(f"[STARTUP] Cache scheduler initialized - will clear cache daily at 12:00 PM")
+    print(f"[STARTUP] Next scheduled cache clear: {scheduler.get_job('daily_cache_clear').next_run_time}")
     app.run(host='0.0.0.0', port=port, debug=True)
 

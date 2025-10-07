@@ -1,40 +1,17 @@
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 import os
-import json
 import traceback
 from datetime import datetime
 from menu_analyzer import MenuAnalyzer
 
-def handler(request):
-    # Set CORS headers
-    headers = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Content-Type': 'application/json'
-    }
-    
-    # Handle preflight requests
-    if request.method == 'OPTIONS':
-        return {
-            'statusCode': 200,
-            'headers': headers,
-            'body': ''
-        }
-    
-    if request.method != 'POST':
-        return {
-            'statusCode': 405,
-            'headers': headers,
-            'body': json.dumps({'error': 'Method not allowed'})
-        }
-    
+app = Flask(__name__)
+CORS(app)
+
+@app.route('/api/analyze', methods=['POST'])
+def analyze():
     try:
-        # Parse request body
-        if hasattr(request, 'json'):
-            data = request.json
-        else:
-            data = json.loads(request.body) if hasattr(request, 'body') else {}
-        
+        data = request.json
         print(f"Received request with data: {data}")
         
         # Simple validation
@@ -47,11 +24,7 @@ def handler(request):
         
         # Validate that vegan and vegetarian aren't both selected
         if vegan and vegetarian:
-            return {
-                'statusCode': 400,
-                'headers': headers,
-                'body': json.dumps({"error": "Cannot be both vegan and vegetarian"})
-            }
+            return jsonify({"error": "Cannot be both vegan and vegetarian"}), 400
         
         # Get API key from environment
         api_key = os.getenv('GEMINI_API_KEY')
@@ -70,25 +43,17 @@ def handler(request):
         recommendations = analyzer.run_analysis()
         print(f"Returning recommendations: {recommendations}")
         
-        return {
-            'statusCode': 200,
-            'headers': headers,
-            'body': json.dumps(recommendations)
-        }
+        return jsonify(recommendations)
     except Exception as e:
         print(f"[SERVER ERROR] {e}")
         traceback.print_exc()
         
         # Check if it's a Gemini API error and pass it through
         if "Gemini API" in str(e) or "503" in str(e) or "Service Unavailable" in str(e):
-            return {
-                'statusCode': 500,
-                'headers': headers,
-                'body': json.dumps({"error": str(e)})
-            }
+            return jsonify({"error": str(e)}), 500
         else:
-            return {
-                'statusCode': 500,
-                'headers': headers,
-                'body': json.dumps({"error": "An internal server error occurred."})
-            }
+            return jsonify({"error": "An internal server error occurred."}), 500
+
+# Vercel serverless function handler
+def handler(request):
+    return app(request.environ, lambda *args: None)

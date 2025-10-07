@@ -1,29 +1,18 @@
-import json
+from flask import Flask, jsonify
+from flask_cors import CORS
 from datetime import datetime
 
+app = Flask(__name__)
+CORS(app)
+
+@app.route('/api/health', methods=['GET'])
+def health():
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'version': '1.0.0'
+    })
+
+# Vercel serverless function handler
 def handler(request):
-    # Set CORS headers
-    headers = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Content-Type': 'application/json'
-    }
-    
-    # Handle preflight requests
-    if request.method == 'OPTIONS':
-        return {
-            'statusCode': 200,
-            'headers': headers,
-            'body': ''
-        }
-    
-    return {
-        'statusCode': 200,
-        'headers': headers,
-        'body': json.dumps({
-            'status': 'healthy',
-            'timestamp': datetime.now().isoformat(),
-            'version': '1.0.0'
-        })
-    }
+    return app(request.environ, lambda *args: None)

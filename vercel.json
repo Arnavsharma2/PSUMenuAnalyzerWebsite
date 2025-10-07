@@ -12,16 +12,8 @@
   ],
   "routes": [
     {
-      "src": "/api/analyze",
-      "dest": "/api/analyze"
-    },
-    {
-      "src": "/api/health",
-      "dest": "/api/health"
-    },
-    {
-      "src": "/api/clear-cache",
-      "dest": "/api/clear-cache"
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
     },
     {
       "src": "/",

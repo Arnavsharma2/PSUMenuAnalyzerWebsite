@@ -1,68 +1,33 @@
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 import os
-import json
 import shutil
 
-def handler(request):
-    # Set CORS headers
-    headers = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Content-Type': 'application/json'
-    }
-    
-    # Handle preflight requests
-    if request.method == 'OPTIONS':
-        return {
-            'statusCode': 200,
-            'headers': headers,
-            'body': ''
-        }
-    
-    if request.method != 'POST':
-        return {
-            'statusCode': 405,
-            'headers': headers,
-            'body': json.dumps({'error': 'Method not allowed'})
-        }
-    
+app = Flask(__name__)
+CORS(app)
+
+@app.route('/api/clear-cache', methods=['POST'])
+def clear_cache():
     try:
-        # Parse request body
-        if hasattr(request, 'json'):
-            data = request.json
-        else:
-            data = json.loads(request.body) if hasattr(request, 'body') else {}
-        
+        data = request.json
         password = data.get('password', '')
         
         if password != 'admin2264':
-            return {
-                'statusCode': 401,
-                'headers': headers,
-                'body': json.dumps({"error": "Invalid password"})
-            }
+            return jsonify({"error": "Invalid password"}), 401
         
         # Clear cache directory - use /tmp for Vercel
         cache_dir = "/tmp/cache"
         if os.path.exists(cache_dir):
             shutil.rmtree(cache_dir)
             os.makedirs(cache_dir)
-            return {
-                'statusCode': 200,
-                'headers': headers,
-                'body': json.dumps({"message": "Cache cleared successfully"})
-            }
+            return jsonify({"message": "Cache cleared successfully"})
         else:
-            return {
-                'statusCode': 200,
-                'headers': headers,
-                'body': json.dumps({"message": "No cache to clear"})
-            }
+            return jsonify({"message": "No cache to clear"})
             
     except Exception as e:
         print(f"[CACHE CLEAR ERROR] {e}")
-        return {
-            'statusCode': 500,
-            'headers': headers,
-            'body': json.dumps({"error": "Failed to clear cache"})
-        }
+        return jsonify({"error": "Failed to clear cache"}), 500
+
+# Vercel serverless function handler
+def handler(request):
+    return app(request.environ, lambda *args: None)

@@ -429,11 +429,11 @@
                 }, 8000);
 
                 try {
-                    // Auto-detect if running locally or on Vercel
+                    // Auto-detect if running locally or on Railway
                     const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
                     const apiUrl = isLocal 
                         ? 'http://127.0.0.1:5001/api/analyze'  // Local development
-                        : '/api/analyze';  // Vercel deployment (relative URL)
+                        : '/api/analyze';  // Railway deployment (relative URL)
                     
                     const response = await fetch(apiUrl, {
                         method: 'POST',

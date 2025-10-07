@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PSU Menu Analyzer</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%2300144A'/%3E%3Ctext x='50' y='60' font-family='Arial, sans-serif' font-size='40' font-weight='bold' text-anchor='middle' fill='white'%3EPSU%3C/text%3E%3C/svg%3E">
+    <link rel="shortcut icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%2300144A'/%3E%3Ctext x='50' y='60' font-family='Arial, sans-serif' font-size='40' font-weight='bold' text-anchor='middle' fill='white'%3EPSU%3C/text%3E%3C/svg%3E">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8;
+        }
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 28px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 28px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #3b82f6; /* blue-500 */
+        }
+        input:checked + .slider:before {
+            transform: translateX(22px);
+        }
+        /* Custom styles for loader and results */
+        #loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .preference-item.disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .social-link {
+            transition: all 0.2s ease;
+        }
+        .social-link:hover {
+            transform: translateY(-1px);
+        }
+        .campus-select {
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+            background-position: right 0.5rem center;
+            background-repeat: no-repeat;
+            background-size: 1.5em 1.5em;
+            padding-right: 2.5rem;
+        }
+    </style>
+</head>
+<body class="antialiased text-gray-800 p-4 sm:p-6 md:p-8">
+    <div class="max-w-4xl mx-auto">
+        <!-- Weekend Warning Banner -->
+        <div class="bg-amber-50 border-l-4 border-amber-400 p-4 mb-6 rounded-r-lg">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-amber-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-amber-800">Weekend Notice</h3>
+                    <div class="mt-1 text-sm text-amber-700">
+                        <p><strong>Results may be inaccurate on Saturdays and Sundays</strong> due to missing menu items on the Penn State dining websites. We recommend using this tool during weekdays for the most accurate recommendations.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <header class="text-center mb-8">
+            <h1 class="text-3xl sm:text-4xl font-bold text-gray-900">PSU Menu Analyzer</h1>
+            <p class="mt-2 text-lg text-gray-600">Get personalized meal recommendations for any Penn State campus dining location.</p>
+        </header>
+
+        <!-- Health Score Explanation -->
+        <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-8 rounded-r-lg">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-blue-800">Understanding Health Scores</h3>
+                    <div class="mt-2 text-sm text-blue-700">
+                        <p class="mb-2">Each menu item receives a health score from 0-100 using AI analysis based on:</p>
+                        <ul class="list-disc list-inside space-y-1">
+                            <li><strong>Protein Content:</strong> High-protein items (chicken, salmon, eggs) score higher</li>
+                            <li><strong>Cooking Method:</strong> Grilled, baked, and steamed items score better than fried options</li>
+                            <li><strong>Nutritional Balance:</strong> Items with better macro and micronutrient profiles</li>
+                            <li><strong>AI Analysis:</strong> Powered by Google Gemini for comprehensive nutritional assessment</li>
+                        </ul>
+                        <div class="mt-3 flex items-center space-x-4 text-xs">
+                            <div class="flex items-center">
+                                <div class="w-4 h-4 bg-green-100 text-green-800 rounded-full flex items-center justify-center font-bold mr-2">80+</div>
+                                <span>Excellent</span>
+                            </div>
+                            <div class="flex items-center">
+                                <div class="w-4 h-4 bg-yellow-100 text-yellow-800 rounded-full flex items-center justify-center font-bold mr-2">60-79</div>
+                                <span>Good</span>
+                            </div>
+                            <div class="flex items-center">
+                                <div class="w-4 h-4 bg-red-100 text-red-800 rounded-full flex items-center justify-center font-bold mr-2">0-59</div>
+                                <span>Fair</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <main>
+            <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+                <h2 class="text-2xl font-semibold mb-4 text-gray-800">Campus & Dietary Preferences</h2>
+                
+                <!-- Campus Selection -->
+                <div class="mb-6">
+                    <label for="campus-select" class="block text-sm font-medium text-gray-700 mb-2">
+                        Select Your Campus Dining Location
+                    </label>
+                    <select id="campus-select" class="campus-select w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        <option value="altoona-port-sky">Altoona - Port Sky Cafe</option>
+                        <option value="beaver-brodhead">Beaver - Brodhead Bistro</option>
+                        <option value="behrend-brunos">Behrend - Bruno's</option>
+                        <option value="behrend-dobbins">Behrend - Dobbins</option>
+                        <option value="berks-tullys">Berks - Tully's</option>
+                        <option value="brandywine-blue-apple">Brandywine - Blue Apple Cafe</option>
+                        <option value="greater-allegheny-cafe-metro">Greater Allegheny - Cafe Metro</option>
+                        <option value="harrisburg-stacks">Harrisburg - Stacks</option>
+                        <option value="harrisburg-outpost">Harrisburg - The Outpost</option>
+                        <option value="hazleton-highacres">Hazleton - HighAcres Cafe</option>
+                        <option value="mont-alto-mill">Mont Alto - The Mill Cafe</option>
+                        <option value="up-east-findlay">UP: East Food District @ Findlay</option>
+                        <option value="up-north-warnock">UP: North Food District @ Warnock</option>
+                        <option value="up-pollock">UP: Pollock Dining Commons</option>
+                        <option value="up-south-redifer">UP: South Food District @ Redifer</option>
+                        <option value="up-west-waring">UP: West Food District @ Waring</option>
+                    </select>
+                    <p class="mt-1 text-xs text-gray-500">Choose the dining location you want to analyze</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Vegetarian Toggle -->
+                    <div id="vegetarian-pref" class="preference-item flex items-center justify-between bg-gray-50 p-4 rounded-lg">
+                        <span class="font-medium text-gray-700">Vegetarian (includes eggs)</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="vegetarian">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <!-- Vegan Toggle -->
+                    <div id="vegan-pref" class="preference-item flex items-center justify-between bg-gray-50 p-4 rounded-lg">
+                        <span class="font-medium text-gray-700">Vegan (no animal products)</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="vegan">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <!-- Protein Priority Toggle -->
+                    <div class="flex items-center justify-between bg-gray-50 p-4 rounded-lg">
+                        <span class="font-medium text-gray-700">Prioritize High Protein</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="prioritize-protein">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <!-- Exclude Beef Toggle -->
+                    <div id="beef-pref" class="preference-item flex items-center justify-between bg-gray-50 p-4 rounded-lg">
+                        <span class="font-medium text-gray-700">Exclude Beef</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="exclude-beef">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <!-- Exclude Pork Toggle -->
+                    <div id="pork-pref" class="preference-item flex items-center justify-between bg-gray-50 p-4 rounded-lg">
+                        <span class="font-medium text-gray-700">Exclude Pork</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="exclude-pork">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+                <div class="mt-6 text-center">
+                    <button id="analyze-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg shadow-md transition-transform transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-300">
+                        Analyze Today's Menu
+                    </button>
+                </div>
+            </div>
+
+            <!-- Results Section -->
+            <div id="results-container" class="space-y-8">
+                <!-- Loader and Error Messages will appear here -->
+            </div>
+        </main>
+        
+        <footer class="text-center mt-12 text-sm text-gray-500">
+            <div class="mb-4">
+                <p>Powered by Gemini AI. This is an independent project and not affiliated with Penn State.</p>
+            </div>
+            
+            <!-- Contact & Social Links -->
+            <div class="border-t border-gray-200 pt-6 mb-6">
+                <p class="font-medium text-gray-700 mb-4">Contact & Connect</p>
+                <div class="flex flex-col sm:flex-row items-center justify-center space-y-2 sm:space-y-0 sm:space-x-6">
+                    <div class="flex items-center space-x-4">
+                        <a href="mailto:arnav.sharma2264@gmail.com" class="social-link text-blue-600 hover:text-blue-800 hover:underline flex items-center">
+                            <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"></path>
+                                <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"></path>
+                            </svg>
+                            Email
+                        </a>
+                        <a href="https://linkedin.com/in/arnav-sharma-b2014824b/" target="_blank" rel="noopener noreferrer" class="social-link text-blue-600 hover:text-blue-800 hover:underline flex items-center">
+                            <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M16.338 16.338H13.67V12.16c0-.995-.017-2.277-1.387-2.277-1.39 0-1.601 1.086-1.601 2.207v4.248H8.014v-8.59h2.559v1.174h.037c.356-.675 1.227-1.387 2.526-1.387 2.703 0 3.203 1.778 3.203 4.092v4.711zM5.005 6.575a1.548 1.548 0 11-.003-3.096 1.548 1.548 0 01.003 3.096zm-1.337 9.763H6.34v-8.59H3.667v8.59zM17.668 1H2.328C1.595 1 1 1.581 1 2.298v15.403C1 18.418 1.595 19 2.328 19h15.34c.734 0 1.332-.582 1.332-1.299V2.298C19 1.581 18.402 1 17.668 1z" clip-rule="evenodd"></path>
+                            </svg>
+                            LinkedIn
+                        </a>
+                        <a href="https://github.com/Arnavsharma2" target="_blank" rel="noopener noreferrer" class="social-link text-blue-600 hover:text-blue-800 hover:underline flex items-center">
+                            <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 0C4.477 0 0 4.484 0 10.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0110 4.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.203 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.942.359.31.678.921.678 1.856 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0020 10.017C20 4.484 15.522 0 10 0z" clip-rule="evenodd"></path>
+                            </svg>
+                            GitHub
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Feedback & Contribution Section -->
+            <div class="border-t border-gray-200 pt-6 mb-6">
+                <p class="font-medium text-gray-700 mb-3">Feedback & Contributions</p>
+                <div class="space-y-2">
+                    <p class="text-sm">
+                        <span class="font-medium">Want to propose changes?</span>
+                        <a href="https://github.com/Arnavsharma2/PSUMenuAnalyzerWebsite" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:text-blue-800 hover:underline ml-1">
+                            Contribute on GitHub
+                        </a>
+                    </p>
+                    <p class="text-sm">
+                        <span class="font-medium">Found a bug or have suggestions?</span>
+                        <a href="mailto:arnav.sharma2264@gmail.com?subject=PSU Menu Analyzer Feedback" class="text-blue-600 hover:text-blue-800 hover:underline ml-1">
+                            Send feedback
+                        </a>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Copyright -->
+            <div class="border-t border-gray-200 pt-4">
+                <p class="text-xs text-gray-400">
+                    © 2025 Arnav Sharma. All rights reserved.
+                </p>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        // Main application logic
+        document.addEventListener('DOMContentLoaded', function () {
+            const analyzeBtn = document.getElementById('analyze-btn');
+            const resultsContainer = document.getElementById('results-container');
+            const campusSelect = document.getElementById('campus-select');
+            const vegetarianToggle = document.getElementById('vegetarian');
+            const veganToggle = document.getElementById('vegan');
+            const beefPref = document.getElementById('beef-pref');
+            const porkPref = document.getElementById('pork-pref');
+
+            // Utility functions
+            const debounce = (func, delay) => {
+                let timeoutId;
+                return (...args) => {
+                    clearTimeout(timeoutId);
+                    timeoutId = setTimeout(() => func.apply(this, args), delay);
+                };
+            };
+
+            const showLoadingState = (message = "Analyzing menu...", isRetrying = false) => {
+                const retryMessage = isRetrying ? `
+                    <div class="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                        <p class="text-sm text-yellow-800">
+                            <strong>Hold on!</strong> The AI service is temporarily busy. We're retrying automatically...
+                        </p>
+                    </div>
+                ` : '';
+                
+                resultsContainer.innerHTML = `
+                    <div class="flex flex-col items-center justify-center p-6 bg-white rounded-lg shadow-md fade-in">
+                        <div id="loader"></div>
+                        <p class="mt-4 text-gray-600 font-medium">${message}</p>
+                        ${retryMessage}
+                    </div>`;
+            };
+
+
+            const savePreferences = (preferences) => {
+                try {
+                    localStorage.setItem('menuPreferences', JSON.stringify(preferences));
+                } catch (e) {
+                    console.warn('Could not save preferences to localStorage:', e);
+                }
+            };
+
+            const loadPreferences = () => {
+                try {
+                    const saved = localStorage.getItem('menuPreferences');
+                    if (saved) {
+                        const prefs = JSON.parse(saved);
+                        Object.keys(prefs).forEach(key => {
+                            const element = document.getElementById(key);
+                            if (element) element.checked = prefs[key];
+                        });
+                        if (prefs.campus) {
+                            campusSelect.value = prefs.campus;
+                        }
+                        updateToggleStates();
+                    }
+                } catch (e) {
+                    console.warn('Could not load preferences from localStorage:', e);
+                }
+            };
+
+            const getPreferences = () => {
+                return {
+                    campus: campusSelect.value,
+                    vegetarian: document.getElementById('vegetarian').checked,
+                    vegan: document.getElementById('vegan').checked,
+                    exclude_beef: document.getElementById('exclude-beef').checked,
+                    exclude_pork: document.getElementById('exclude-pork').checked,
+                    prioritize_protein: document.getElementById('prioritize-protein').checked
+                };
+            };
+
+            // Load saved preferences
+            loadPreferences();
+
+            // Logic to disable beef/pork toggles if vegetarian or vegan is selected
+            function updateToggleStates() {
+                const isVegetarian = vegetarianToggle.checked;
+                const isVegan = veganToggle.checked;
+                
+                // If vegan is selected, disable vegetarian
+                if (isVegan) {
+                    vegetarianToggle.checked = false;
+                    vegetarianToggle.disabled = true;
+                } else {
+                    vegetarianToggle.disabled = false;
+                }
+                
+                // If vegetarian is selected, disable vegan
+                if (isVegetarian) {
+                    veganToggle.checked = false;
+                    veganToggle.disabled = true;
+                } else {
+                    veganToggle.disabled = false;
+                }
+                
+                // Disable beef/pork if either vegetarian or vegan is selected
+                const shouldDisableMeat = isVegetarian || isVegan;
+                beefPref.classList.toggle('disabled', shouldDisableMeat);
+                porkPref.classList.toggle('disabled', shouldDisableMeat);
+                
+                if (shouldDisableMeat) {
+                    document.getElementById('exclude-beef').checked = false;
+                    document.getElementById('exclude-pork').checked = false;
+                }
+
+                // Save preferences when they change
+                savePreferences(getPreferences());
+            }
+
+            vegetarianToggle.addEventListener('change', updateToggleStates);
+            veganToggle.addEventListener('change', updateToggleStates);
+            campusSelect.addEventListener('change', () => savePreferences(getPreferences()));
+            
+            // Debounced analysis function
+            const debouncedAnalyze = debounce(async () => {
+                const preferences = getPreferences();
+                
+                showLoadingState(`Analyzing menu for ${campusSelect.options[campusSelect.selectedIndex].text}...`);
+
+                // Set up retry detection - if it takes longer than 8 seconds, show retry message
+                let retryTimeout;
+                const retryDetection = setTimeout(() => {
+                    showLoadingState(`Analyzing menu for ${campusSelect.options[campusSelect.selectedIndex].text}...`, true);
+                }, 8000);
+
+                try {
+                    // Auto-detect if running locally or on Vercel
+                    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+                    const apiUrl = isLocal 
+                        ? 'http://127.0.0.1:5001/api/analyze'  // Local development
+                        : '/api/analyze';  // Vercel deployment (relative URL)
+                    
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(preferences)
+                    });
+
+                    clearTimeout(retryDetection);
+
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response from server.' }));
+                        throw new Error(errorData.error || `Server responded with status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    displayResults(data);
+
+                } catch (error) {
+                    clearTimeout(retryDetection);
+                    console.error('Error fetching recommendations:', error);
+                    
+                    let errorMessage = "Could not connect to the backend server.";
+                    let suggestion = "Please try again later.";
+                    
+                    if (error.message.includes('429')) {
+                        errorMessage = "Too many requests. Please wait a moment before trying again.";
+                        suggestion = "Rate limit exceeded. Please wait 1 minute before retrying.";
+                    } else if (error.message.includes('500')) {
+                        errorMessage = "Server error occurred.";
+                        suggestion = "Please try again in a few moments.";
+                    } else if (error.message.includes('400')) {
+                        errorMessage = "Invalid request data.";
+                        suggestion = "Please refresh the page and try again.";
+                    } else if (error.message.includes('Gemini API') || error.message.includes('503') || error.message.includes('Service Unavailable')) {
+                        errorMessage = "AI Analysis Service Unavailable";
+                        suggestion = "The Google Gemini AI service is currently experiencing issues. This is not a problem with our application - please try again in a few minutes.";
+                    } else if (error.message.includes('Could not fetch form data') || 
+                               error.message.includes('Could not find campus value') || 
+                               error.message.includes('No dates found') ||
+                               error.message.includes('Failed to scrape any menu items')) {
+                        errorMessage = "Menu Data Unavailable";
+                        suggestion = error.message;
+                    }
+                    
+                    resultsContainer.innerHTML = `
+                        <div class="bg-red-100 border-l-4 border-red-500 text-red-800 p-4 rounded-lg shadow-sm fade-in" role="alert">
+                            <p class="font-bold">${errorMessage}</p>
+                            <p class="mt-2 text-sm">${suggestion}</p>
+                            ${error.message.includes('Gemini API') || error.message.includes('503') || error.message.includes('Service Unavailable') ? 
+                                '<div class="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-md"><p class="text-xs text-yellow-800"><strong>Note:</strong> This is a temporary issue with Google\'s Gemini AI service, not our application. The service should be restored shortly.</p></div>' : 
+                                ''
+                            }
+                        </div>`;
+                }
+            }, 500);
+
+            analyzeBtn.addEventListener('click', debouncedAnalyze);
+
+            function displayResults(data) {
+                resultsContainer.innerHTML = ''; // Clear previous results or loader
+                const meals = ['Breakfast', 'Lunch', 'Dinner'];
+
+                if (Object.values(data).every(meal => !meal || meal.length === 0)) {
+                    resultsContainer.innerHTML = `
+                        <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-4 rounded-lg shadow-sm fade-in" role="alert">
+                            <p class="font-bold">No Recommendations Found</p>
+                            <p>No menu items matching your preferences could be found for today. Please try again later or adjust your filters.</p>
+                        </div>`;
+                    return;
+                }
+
+                meals.forEach(mealName => {
+                    const items = data[mealName];
+                    const mealEl = document.createElement('div');
+                    mealEl.className = 'bg-white rounded-lg shadow-md p-6 fade-in';
+                    
+                    let itemsHtml = '<p class="text-gray-500">No items found for this meal.</p>';
+                    if (items && items.length > 0) {
+                        itemsHtml = items.map((item, index) => {
+                            const [food, score, reason, url] = item;
+                            const scoreColor = score >= 80 ? 'bg-green-100 text-green-800' : score >= 60 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800';
+                            return `
+                                <div class="py-4 ${index < items.length - 1 ? 'border-b border-gray-200' : ''}">
+                                    <div class="flex items-start justify-between">
+                                        <div class="flex-1">
+                                            <h4 class="text-lg font-semibold text-gray-800">${food}</h4>
+                                            <p class="text-sm text-gray-500 mt-1">
+                                                <strong class="font-medium">Analysis:</strong> ${reason || 'A standard, balanced option.'}
+                                            </p>
+                                        </div>
+                                        <div class="ml-4 text-center">
+                                            <span class="text-xs font-semibold uppercase text-gray-500">Score</span>
+                                            <div class="text-xl font-bold ${scoreColor} rounded-full w-12 h-12 flex items-center justify-center mt-1">${score}</div>
+                                        </div>
+                                    </div>
+                                    <div class="mt-2">
+                                        <a href="${url}" target="_blank" rel="noopener noreferrer" class="text-sm text-blue-600 hover:text-blue-800 hover:underline">
+                                            View Nutrition Info &rarr;
+                                        </a>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('');
+                    }
+
+                    mealEl.innerHTML = `
+                        <h3 class="text-2xl font-bold text-blue-700 mb-4 pb-2 border-b-2 border-blue-200">${mealName}</h3>
+                        <div class="space-y-2">${itemsHtml}</div>
+                    `;
+                    resultsContainer.appendChild(mealEl);
+                });
+            }
+
+            // Add keyboard shortcuts
+            document.addEventListener('keydown', (e) => {
+                if (e.ctrlKey && e.key === 'Enter') {
+                    e.preventDefault();
+                    debouncedAnalyze();
+                }
+            });
+
+            // Add service worker for offline functionality (optional)
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/sw.js').catch(err => {
+                    console.log('Service worker registration failed:', err);
+                });
+            }
+        });
+
+        // Cache clear functionality
+        function clearCache() {
+            const password = prompt('Enter admin password to clear cache:');
+            if (!password) return;
+            
+            fetch('/api/clear-cache', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ password: password })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                } else {
+                    alert('Success: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error clearing cache: ' + error.message);
+            });
+        }
+    </script>
+
+    <!-- Cache Clear Button -->
+    <div class="fixed bottom-4 right-4">
+        <button onclick="clearCache()" 
+                class="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-2 rounded-lg shadow-lg transition-colors duration-200 opacity-50 hover:opacity-100"
+                title="Clear Cache (Admin Only)">
+            🗑️ Clear Cache
+        </button>
+    </div>
+</body>
+</html>
+

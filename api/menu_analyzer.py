@@ -39,8 +39,8 @@ class MenuAnalyzer:
         if self.prioritize_protein and self.debug:
             print("INFO: Analysis is set to prioritize protein content.")
         
-        # Cache directory setup - use /tmp for Vercel
-        self.cache_dir = "/tmp/cache"
+        # Cache directory setup - use ./cache for Google Cloud Run
+        self.cache_dir = "cache"
         if not os.path.exists(self.cache_dir):
             os.makedirs(self.cache_dir)
 

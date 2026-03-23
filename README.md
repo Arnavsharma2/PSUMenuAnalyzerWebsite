@@ -21,7 +21,7 @@ Controls:
 
 1. **Menu Scraping**: Flask backend scrapes menu data from Penn State dining websites using BeautifulSoup
 2. **Data Processing**: Parses HTML to extract food items, meal times, and nutrition links
-3. **AI Analysis**: Sends food items to Google Gemini 2.0 Flash API for health scoring
+3. **AI Analysis**: Sends food items to Google Gemini 3.1 Flash API for health scoring
 4. **Preference Filtering**: Applies user dietary restrictions and preferences server-side
 5. **Ranking**: Sorts items by health score and protein content (if prioritized)
 6. **Caching**: Stores results in pickle files with MD5 hash keys for 24-hour cache
@@ -36,7 +36,7 @@ Controls:
 - `aiohttp` - Async HTTP requests
 - `python-dotenv` - Environment variable management
 - `gunicorn` - WSGI server for production
-- `Google Gemini 2.5 Flash API` - AI-powered nutritional analysis
+- `Google Gemini 3.1 Flash API` - AI-powered nutritional analysis
 - `Tailwind CSS` - Frontend styling framework
 
 ## Technical Details
@@ -47,5 +47,5 @@ Controls:
 - Supported Locations: 16+ Penn State campus dining locations
 - Cache: 24-hour pickle file cache with MD5 hash keys
 - Scraping: BeautifulSoup parsing of Penn State dining HTML
-- AI Model: Google Gemini 2.5 Flash
+- AI Model: Google Gemini 3.1 Flash
 - Note: Results may be inaccurate on weekends due to missing menu data

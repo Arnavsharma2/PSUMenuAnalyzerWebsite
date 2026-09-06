@@ -1,27 +1,12 @@
-// Simple service worker for caching
-const CACHE_NAME = 'menu-analyzer-v1';
-const urlsToCache = [
-    '/',
-    '/index.html',
-    '/main.py'
-];
-
-self.addEventListener('install', (event) => {
-    event.waitUntil(
-        caches.open(CACHE_NAME)
-            .then((cache) => cache.addAll(urlsToCache))
-    );
-});
-
-self.addEventListener('fetch', (event) => {
-    event.respondWith(
-        caches.match(event.request)
-            .then((response) => {
-                if (response) {
-                    return response;
-                }
-                return fetch(event.request);
-            }
-        )
-    );
+// Retire the old cache-first worker so updates and menus are never stuck offline.
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    (async () => {
+      for (const key of await caches.keys()) {
+        if (key.startsWith("menu-analyzer-")) await caches.delete(key);
+      }
+      await self.registration.unregister();
+    })(),
+  );
 });

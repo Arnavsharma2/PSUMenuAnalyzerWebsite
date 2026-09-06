@@ -1,99 +1,78 @@
-# PSU Menu Analyzer
+# PSUMenu
 
-A Flask web application that turns Penn State dining menus into meal-by-meal recommendations. Students choose a dining location and dietary preferences; the app fetches the menu, asks Gemini to rank options, and links each recommendation to the dining site's nutrition information.
+[Live app](https://psumenu.com) · [Penn State's official menus](https://www.absecom.psu.edu/menus/user-pages/daily-menu.cfm)
 
-[Project site](https://www.psumenu.com) · [Run locally](#run-locally) · [API](#api) · [Original CLI project](https://github.com/Arnavsharma2/PSU-Menu-Analyzer)
+Find meal ideas at Penn State by dining location, menu date, and dietary preference. PSUMenu reads the published menus, uses Penn State's dietary labels for vegan and vegetarian filtering, and optionally asks Gemini to suggest up to five items per meal. If Gemini is unavailable, students can still browse the filtered, published menu.
 
 ## What it does
 
-- Supports 16 configured Penn State dining locations, with breakfast, lunch, and dinner results.
-- Offers vegetarian, vegan, beef/pork exclusion, and protein-priority preferences.
-- Fetches the three meal pages concurrently with a bounded thread pool.
-- Returns ranked choices with a 0–100 model-generated score, explanation, and nutrition link.
-- Reuses file-cached results keyed by campus, menu-day key, and preferences to reduce repeated API calls.
-- Saves browser preferences in `localStorage` and presents results in a responsive HTML/JavaScript interface.
+- Lists current dining locations and published dates directly from Penn State.
+- Fetches breakfast, lunch, and dinner concurrently, with independent HTTP sessions and bounded timeouts.
+- Checks the returned location/date and keeps only official nutrition links.
+- Uses source dietary labels instead of guessing whether an item is vegan or vegetarian from its name.
+- Constrains Gemini to JSON and validates every suggested item against the corresponding meal before returning it.
+- Shares a 15-minute SQLite menu cache across requests. Successful rankings are cached separately by location, full date, preferences, model, and cache version.
+- Keeps partial menu failures visible and avoids caching a failed AI ranking as a successful result.
+- Remembers preferences locally, prevents overlapping submissions, and works on narrow mobile screens without a frontend build step.
 
-## How it works
-
-```mermaid
-flowchart LR
-    Browser["Browser: location and preferences"] --> API["Flask API"]
-    API --> Cache["Local result cache"]
-    API --> Scraper["Concurrent menu fetching"]
-    Scraper --> PSU["Penn State dining HTML"]
-    Scraper --> Gemini["Gemini ranking"]
-    Gemini --> Filters["Preference filters and sorting"]
-    Filters --> Cache
-    Filters --> Browser
-```
-
-The backend uses BeautifulSoup to extract menu names and nutrition links, requests structured JSON from Gemini, applies name-based preference filters, and sorts recommendations by score. Transient model API failures use bounded retries with exponential backoff.
+Suggestions are based on menu names and dietary labels, not a complete nutritional analysis. Internal model scores only sort suggestions; the UI does not present them as measured health scores. Beef/pork exclusions use source labels plus conservative word matching and are not an allergy guarantee. Always check Penn State's official ingredient and allergen information.
 
 ## Run locally
 
-Requirements: Python 3.11+, a Gemini API key with access to the model configured in `main.py`, and network access to Penn State dining pages.
+Use Python 3.12 and an optional Gemini API key. Without a key, the app shows published menu items without AI ranking.
 
-```bash
-git clone https://github.com/Arnavsharma2/PSUMenuAnalyzerWebsite.git
-cd PSUMenuAnalyzerWebsite
-python3 -m venv .venv
+```sh
+python3.12 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements.txt
-
-# Supply your key in the shell; keep it out of source control.
-export GEMINI_API_KEY='your-key'
-gunicorn --bind 127.0.0.1:5001 --timeout 180 main:app
+pip install -r requirements-dev.txt
+cp .env.example .env
+# Set GEMINI_API_KEY in .env if AI ranking is wanted.
+python main.py
 ```
 
-Optional: set `CACHE_ADMIN_PASSWORD` in the server environment to enable authenticated cache clearing. The endpoint is disabled when this value is unset. Ordinary menu analysis does not require this setting.
+Open http://127.0.0.1:5001. The frontend uses relative API URLs, so other ports work too.
 
-Open [localhost:5001](http://localhost:5001), choose a dining location, set preferences, and select **Analyze Today's Menu**. The health endpoint can be checked without requesting menu analysis:
+| Variable               | Purpose                                                                          |
+| ---------------------- | -------------------------------------------------------------------------------- |
+| `GEMINI_API_KEY`       | Server-side Gemini credential. Never commit it or put it in frontend JavaScript. |
+| `GEMINI_MODEL`         | Defaults to `gemini-3.5-flash-lite`; choose a model available to your project.   |
+| `CACHE_DIR`            | Optional cache directory; defaults to `cache/` beside `main.py`.                 |
+| `CACHE_ADMIN_PASSWORD` | Optional. When unset, cache administration is disabled.                          |
+| `PORT`                 | Local server port, default `5001`. Docker defaults to `8080`.                    |
 
-```bash
-curl http://localhost:5001/health
+The Gemini integration uses the supported REST API with JSON-schema output and authentication in the request header, not the URL. The model can be changed without editing code. See Google's [model catalog](https://ai.google.dev/gemini-api/docs/models), [structured output documentation](https://ai.google.dev/gemini-api/docs/structured-output), and [API key guide](https://ai.google.dev/gemini-api/docs/api-key).
+
+## Tests
+
+```sh
+python -m pytest -q
+python -m pip check
+node --check static/app.js
+node --check sw.js
 ```
 
-The model endpoint is currently configured as `gemini-3.1-flash-preview` in `main.py`; model availability and account access are external dependencies.
+Tests block external network access. They cover scraping, exact date/location selection, dietary labels, cache expiration and concurrent writes, hallucinated items, malformed responses, bounded retries, AI fallback, request validation, and cache administration. GitHub Actions also builds the Docker image.
 
-### Docker
+## Deployment
 
-The included Dockerfile runs the Flask app with Gunicorn on port 8080:
+The existing application runs as a Docker web service on Render. Keep credentials in the service's environment settings. There is no need to expose the key to browsers or commit a `.env` file. The image copies only runtime application files; local environment files and caches are excluded.
 
-```bash
-docker build -t psu-menu-analyzer .
-docker run --rm -p 127.0.0.1:8080:8080 \
-  -e GEMINI_API_KEY psu-menu-analyzer
+```sh
+docker build -t psumenu .
+docker run --rm -p 8080:8080 --env-file .env -e PORT=8080 psumenu
 ```
 
-Open [localhost:8080](http://localhost:8080). The default container cache is ephemeral.
+The Docker command starts one Gunicorn worker with four threads, a 90-second worker timeout, and the optional control socket disabled. Duplicate-request suppression is per process; SQLite entries are shared on the same local disk. This is not a distributed cache or a global quota system. Render's ephemeral cache is sufficient; a restart simply causes fresh requests.
 
-## API
+- `GET /health`: application liveness, version `2.0.0`; it does not promise that upstream services are available.
+- `GET /api/options`: currently published locations and dates.
+- `POST /api/analyze`: location, optional ISO date, and boolean preferences. Returns meal arrays plus `_meta` with date, source, cache status, warnings, and whether Gemini ranking was used.
+- `POST /api/clear-cache`: authenticated maintenance endpoint, disabled by default. The public page does not expose an admin button.
 
-| Endpoint | Purpose |
-| --- | --- |
-| `GET /` | Serve the web interface |
-| `GET /health` | Return application status and timestamp |
-| `POST /api/analyze` | Analyze the selected campus menu with dietary preferences |
+Old pickle caches are not read. The retirement service worker removes only this app's old caches and unregisters itself, avoiding stale offline menu pages.
 
-The analysis request accepts `campus`, `vegetarian`, `vegan`, `exclude_beef`, `exclude_pork`, and `prioritize_protein`. Selecting both vegan and vegetarian is rejected. Results are grouped by meal, with each item represented as `[food_name, score, reasoning, nutrition_url]`.
+## Stack
 
-## Implementation and limitations
+Python · Flask · Requests · BeautifulSoup · SQLite · Gemini REST API · vanilla JavaScript/CSS · Gunicorn · Docker
 
-- **Backend:** Flask, Flask-CORS, Requests, BeautifulSoup, Python-dotenv, and Gunicorn. The dependency file also includes aiohttp.
-- **Frontend:** HTML, JavaScript, and Tailwind CSS loaded from a CDN.
-- **Cache:** pickle files under `cache/`, addressed by MD5 hashes of the request's campus, day key, and preferences. This is a local application cache rather than shared storage across replicas.
-- **Menu freshness:** the scraper depends on Penn State's HTML structure and available menu dates. Missing dates or weekend data can produce incomplete results or a fallback to the first available menu date.
-- **Recommendation scope:** scores and explanations are model estimates based on item names, not measured nutritional values. Name-based dietary filters cannot establish ingredient or allergen safety; consult the linked dining information.
-- **Validation:** `python -m unittest discover -s tests -v` covers cache-admin authentication and cache preservation. Scraping and recommendation quality do not yet have automated regression coverage.
-
-## Repository map
-
-| File | Purpose |
-| --- | --- |
-| [`main.py`](main.py) | Flask routes, scraping, Gemini requests, filtering, and caching |
-| [`index.html`](index.html) | Responsive interface and saved preferences |
-| [`sw.js`](sw.js) | Service-worker source |
-| [`requirements.txt`](requirements.txt) | Python dependencies |
-| [`Dockerfile`](Dockerfile) | Gunicorn container image |
-
-The earlier [PSU-Menu-Analyzer](https://github.com/Arnavsharma2/PSU-Menu-Analyzer) repository contains an interactive Python CLI focused on Altoona. This repository contains the web application and multi-location interface.
+No Node runtime, third-party browser scripts, database service, or frontend framework is required for production.

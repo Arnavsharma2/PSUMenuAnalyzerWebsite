@@ -9,6 +9,7 @@ from datetime import datetime
 import os
 import time
 import hashlib
+import hmac
 import pickle
 from urllib.parse import urljoin
 from dotenv import load_dotenv
@@ -438,12 +439,17 @@ def health_check():
 @app.route('/api/clear-cache', methods=['POST'])
 def clear_cache():
     try:
-        data = request.json
-        password = data.get('password', '')
-        
-        if password != 'admin2264':
+        expected_password = os.getenv('CACHE_ADMIN_PASSWORD', '')
+        if not expected_password:
+            return jsonify({"error": "Cache administration is disabled"}), 503
+
+        data = request.get_json(silent=True)
+        password = data.get('password', '') if isinstance(data, dict) else ''
+        if not isinstance(password, str) or not hmac.compare_digest(
+            password.encode('utf-8'), expected_password.encode('utf-8')
+        ):
             return jsonify({"error": "Invalid password"}), 401
-        
+
         # Clear cache directory
         import shutil
         if os.path.exists("cache"):
@@ -508,4 +514,5 @@ def analyze():
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5001))
     app.run(host='0.0.0.0', port=port, debug=True)
+
 

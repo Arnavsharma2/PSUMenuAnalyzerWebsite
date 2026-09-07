@@ -1,10 +1,10 @@
 import os
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
-from main import app
+from main import Cache, app
 
 
 class CacheAdminTests(unittest.TestCase):
@@ -14,15 +14,20 @@ class CacheAdminTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         os.chdir(self.directory.name)
         self.addCleanup(os.chdir, self.original_cwd)
-        Path("cache").mkdir()
-        Path("cache/sentinel.txt").write_text("cached result")
-        self.environment = patch.dict(os.environ, {"CACHE_ADMIN_PASSWORD": ""})
+        self.environment = patch.dict(
+            os.environ,
+            {
+                "CACHE_ADMIN_PASSWORD": "",
+                "CACHE_DIR": str(Path(self.directory.name) / "cache"),
+            },
+        )
         self.environment.start()
         self.addCleanup(self.environment.stop)
+        Cache().set("sentinel", {"value": "cached result"})
         self.client = app.test_client()
 
     def assert_cache_preserved(self):
-        self.assertEqual(Path("cache/sentinel.txt").read_text(), "cached result")
+        self.assertEqual(Cache().get("sentinel"), {"value": "cached result"})
 
     def test_unset_admin_password_disables_cache_clearing(self):
         os.environ.pop("CACHE_ADMIN_PASSWORD", None)
@@ -43,7 +48,14 @@ class CacheAdminTests(unittest.TestCase):
 
     def test_missing_and_non_string_passwords_are_rejected(self):
         os.environ["CACHE_ADMIN_PASSWORD"] = "configured-test-password"
-        for body in ({}, [], None, {"password": None}, {"password": 123}, {"password": []}):
+        for body in (
+            {},
+            [],
+            None,
+            {"password": None},
+            {"password": 123},
+            {"password": []},
+        ):
             with self.subTest(body=body):
                 response = self.client.post("/api/clear-cache", json=body)
                 self.assertEqual(response.status_code, 401)
@@ -65,7 +77,7 @@ class CacheAdminTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {"message": "Cache cleared successfully"})
         self.assertTrue(Path("cache").is_dir())
-        self.assertEqual(list(Path("cache").iterdir()), [])
+        self.assertIsNone(Cache().get("sentinel"))
 
     def test_unicode_configured_password_is_supported(self):
         os.environ["CACHE_ADMIN_PASSWORD"] = "test-password-\u00e9"
@@ -73,7 +85,7 @@ class CacheAdminTests(unittest.TestCase):
             "/api/clear-cache", json={"password": "test-password-\u00e9"}
         )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(list(Path("cache").iterdir()), [])
+        self.assertIsNone(Cache().get("sentinel"))
 
 
 if __name__ == "__main__":
